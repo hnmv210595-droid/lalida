@@ -1,0 +1,36 @@
+# Tự deploy LaLiDa lên Cloudflare Pages mỗi khi đẩy code lên nhánh main.
+# Cần 2 secret trong GitHub repo (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN  - API token Cloudflare (quyền: Account / Cloudflare Pages / Edit)
+#   CLOUDFLARE_ACCOUNT_ID - ID tài khoản Cloudflare
+# Lưu ý: workflow chỉ deploy code, KHÔNG chạy schema/migration database (làm tay để tránh mất dữ liệu).
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # cho phép bấm chạy tay trong tab Actions
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Deploy
+        run: npx wrangler pages deploy --branch main --commit-dirty=true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -139,6 +139,14 @@ Cloudflare Dashboard → **Workers & Pages** → `lalida` → **Custom domains**
 5. Mở **Đơn hàng & Bếp** trên máy tính bảng ở bếp/quầy để nhận đơn.
 6. Lần đầu nên đổi ngay mật khẩu Admin (Cài đặt) và mã PIN (Thu chi & Lợi nhuận).
 
+### Tự deploy khi đẩy code lên GitHub
+File `.github/workflows/deploy.yml` tự chạy `wrangler pages deploy` mỗi khi có code mới trên nhánh `main`.
+Repo cần 2 secret (GitHub → **Settings → Secrets and variables → Actions**):
+- `CLOUDFLARE_ACCOUNT_ID`: ID tài khoản Cloudflare.
+- `CLOUDFLARE_API_TOKEN`: tạo ở Cloudflare Dashboard → **My Profile → API Tokens → Create Token → Create Custom Token** → Permissions: `Account` · `Cloudflare Pages` · `Edit` → Create.
+
+Workflow **không** chạy `schema.sql` hay migration; thay đổi database vẫn làm bằng lệnh `wrangler d1 execute`.
+
 ---
 
 ## Chạy thử trên máy (local)
