@@ -31,10 +31,34 @@
         <div class="text-[11px] text-stone-500 mt-1 hidden sm:block">Gà ba nuôi - Cơm mẹ nấu</div>
       </div>
     </div>
-    <nav class="max-w-6xl mx-auto px-2">
-      <div id="tabs" class="flex gap-1 overflow-x-auto no-scrollbar py-2" role="tablist"></div>
+    <!-- Thanh điều hướng: nút về trang chính + danh mục món (chỉ hiện trong Menu) -->
+    <nav id="tabs-nav" class="hidden max-w-6xl mx-auto px-2">
+      <div class="flex items-center gap-1 py-2">
+        <a href="#" class="shrink-0 px-3 py-2 rounded-full text-sm font-semibold bg-cream-200 text-brand-800 hover:bg-cream-100" aria-label="Về trang chính">← Trang chính</a>
+        <div id="tabs" class="flex gap-1 overflow-x-auto no-scrollbar" role="tablist"></div>
+      </div>
     </nav>
   </header>
+
+  <!-- TRANG CHÍNH sau khi quét QR: Menu, bên dưới là Góp ý & Phản hồi -->
+  <section id="home-view" class="hidden max-w-md mx-auto px-4 py-6 space-y-4">
+    <p class="text-center text-brand-800 font-semibold">Chào mừng quý khách đến với LaLiDa! 🍗</p>
+    <a href="#menu" class="block rounded-3xl bg-brand-700 hover:bg-brand-800 text-white p-6 shadow-lg text-center transition">
+      <div class="text-5xl">🍽️</div>
+      <div class="text-2xl font-bold mt-2">Menu</div>
+      <div class="text-sm opacity-90">Xem thực đơn & đặt món</div>
+    </a>
+    <a id="home-order" href="#don-da-dat" class="hidden block rounded-2xl bg-white border border-brand-300 p-4 text-center text-brand-800 font-semibold shadow-sm">
+      📋 Xem / sửa đơn đã đặt <span id="home-order-count" class="text-clay-600"></span>
+    </a>
+    <a href="#gop-y" class="block rounded-3xl bg-white border-2 border-clay-500 p-6 shadow-sm text-center hover:bg-cream-100 transition">
+      <div class="text-5xl">💬</div>
+      <div class="text-2xl font-bold mt-2 text-brand-800">Góp ý & Phản hồi</div>
+      <div class="reward-hint mt-3 rounded-xl bg-gradient-to-r from-clay-500 to-amber-500 text-white px-3 py-2 text-sm font-semibold">
+        🎁 Góp ý ngay - Tặng 1 ly nước cho hóa đơn lần sau
+      </div>
+    </a>
+  </section>
 
   <div id="no-table" class="hidden max-w-6xl mx-auto px-4 mt-4">
     <div class="rounded-xl bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 text-sm">
@@ -49,7 +73,8 @@
     </div>
   </div>
 
-  <main id="main" class="max-w-6xl mx-auto px-4 py-4 lg:grid lg:grid-cols-[1fr_360px] lg:gap-6 pb-28 lg:pb-8">
+  <!-- lg:grid được bật/tắt bằng JS theo màn hình đang xem (order.js: setView) -->
+  <main id="main" class="hidden max-w-6xl mx-auto px-4 py-4 lg:grid-cols-[1fr_360px] lg:gap-6 pb-28 lg:pb-8">
     <!-- THỰC ĐƠN -->
     <section id="menu-section">
       <h1 id="cat-title" class="text-xl font-bold text-brand-800 mb-3"></h1>
@@ -60,10 +85,11 @@
 
     <!-- GÓP Ý & PHẢN HỒI -->
     <section id="feedback-section" class="hidden">
+      <a href="#" class="inline-block mb-3 text-sm font-semibold text-brand-800 hover:underline">← Trang chính</a>
       <h1 class="text-xl font-bold text-brand-800 mb-3">Góp ý & Phản hồi</h1>
       <div id="reward-banner" class="hidden mb-4 rounded-2xl bg-gradient-to-r from-clay-500 to-amber-500 text-white p-4 shadow-sm">
         <div class="font-bold text-lg">🎁 Góp ý nhận quà</div>
-        <div class="text-sm opacity-95">Gửi góp ý cho LaLiDa để nhận <b>1 ly nước miễn phí</b> cho lần ăn sau.</div>
+        <div class="text-sm opacity-95">Góp ý cho LaLiDa để được tặng <b>1 ly nước</b> cho hóa đơn lần sau.</div>
       </div>
       <div id="my-vouchers" class="space-y-3 mb-4"></div>
       <form id="feedback-form" class="bg-white rounded-2xl border border-cream-200 p-5 space-y-4 shadow-sm">
@@ -99,7 +125,7 @@
           <div id="cart-lines" class="divide-y divide-stone-100 text-sm"></div>
           <textarea id="order-note" rows="2" maxlength="300" placeholder="Ghi chú cho bếp (ít cay, không hành…)" class="mt-3 w-full text-sm rounded-lg border border-stone-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
           <div class="flex justify-between font-semibold mt-3"><span>Cộng</span><span id="cart-total">0đ</span></div>
-          <button id="submit-order" class="mt-3 w-full rounded-xl bg-clay-500 hover:bg-clay-600 disabled:bg-stone-300 text-white font-semibold py-3">Gửi đơn cho bếp</button>
+          <button id="submit-order" class="mt-3 w-full rounded-xl bg-clay-500 hover:bg-clay-600 disabled:bg-stone-300 text-white font-semibold py-3">Đặt đơn</button>
         </div>
 
         <!-- Đơn đã đặt -->

@@ -83,6 +83,33 @@ route('POST', '/public/orders', 'public', async ({ env, body }) => {
   return { order: await addItemsToTable(env, body) };
 });
 
+// Khách sửa đơn: đổi số lượng hoặc bỏ món (quantity = 0) - chỉ với món bếp chưa làm ("Đang chờ")
+route('PATCH', '/public/order-items/:id', 'public', async ({ env, params, body }) => {
+  await requireCustomerOrdering(env);
+  const table = int(body.table, { min: 1, name: 'Số bàn' });
+  const quantity = int(body.quantity, { min: 0, max: 50, name: 'Số lượng' });
+  const item = await env.DB.prepare(
+    `SELECT i.id, i.status, i.order_id, o.table_number, o.status AS order_status,
+       EXISTS (SELECT 1 FROM vouchers v WHERE v.order_item_id = i.id) AS is_gift
+     FROM order_items i JOIN orders o ON o.id = i.order_id WHERE i.id = ?`
+  )
+    .bind(params.id)
+    .first();
+  if (!item || item.table_number !== table || item.order_status !== 'open') throw new HttpError(404, 'Không tìm thấy món trong đơn của bàn');
+  if (item.is_gift) throw new HttpError(409, 'Không sửa được ly nước tặng, vui lòng báo nhân viên');
+  if (item.status !== 'pending') throw new HttpError(409, 'Bếp đã bắt đầu làm món này, vui lòng báo nhân viên nếu cần đổi');
+  const res = await env.DB.prepare(
+    quantity === 0
+      ? "UPDATE order_items SET status = 'cancelled' WHERE id = ? AND status = 'pending'"
+      : "UPDATE order_items SET quantity = ? WHERE id = ? AND status = 'pending'"
+  )
+    .bind(...(quantity === 0 ? [item.id] : [quantity, item.id]))
+    .run();
+  if (!res.meta.changes) throw new HttpError(409, 'Bếp đã bắt đầu làm món này, vui lòng báo nhân viên nếu cần đổi');
+  await env.DB.prepare("UPDATE orders SET updated_at = datetime('now') WHERE id = ?").bind(item.order_id).run();
+  return { order: await getOrder(env, item.order_id) };
+});
+
 // Góp ý: khách đang dùng bữa tại bàn (bàn có đơn đang mở) được tặng mã 1 ly nước cho lần sau
 route('POST', '/public/feedback', 'public', async ({ env, body }) => {
   const rating = int(body.rating, { min: 1, max: 5, name: 'Số sao đánh giá' });

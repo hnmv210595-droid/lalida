@@ -12,7 +12,8 @@
     categories: [],
     items: [],
     settings: {},
-    tab: null, // slug danh mục hoặc 'feedback'
+    view: 'home', // home (trang chính) | menu | feedback - theo hash URL: '' | #menu | #gop-y (#don-da-dat = menu + mở đơn)
+    tab: null, // slug danh mục đang xem trong Menu
     cart: storage.get(CART_KEY, {}), // { [menuItemId]: { qty, note } }
     tableOk: false,
     order: null,
@@ -54,25 +55,20 @@
       applyMode();
       // Bỏ món trong giỏ không còn phục vụ
       for (const id of Object.keys(state.cart)) if (!state.items.some((i) => i.id === Number(id))) delete state.cart[id];
-      state.tab = location.hash === '#gop-y' ? 'feedback' : state.categories[0]?.slug;
+      state.tab = state.categories[0]?.slug;
       renderTabs();
       renderMenu();
       renderCart();
     } catch (e) {
       $('menu-grid').innerHTML = `<div class="text-red-600">${esc(e.message)}</div>`;
     }
+    route();
   }
 
-  // Chế độ chỉ xem: ẩn giỏ hàng / đơn đã đặt, khách chỉ xem thực đơn & góp ý
+  // Khách tự gọi món (bật/tắt trong Cài đặt Admin); tắt thì chỉ xem thực đơn & góp ý
   function applyMode() {
     state.ordering = state.settings.customer_ordering === '1';
     const reward = state.settings.feedback_reward_enabled === '1';
-    $('side').classList.toggle('hidden', !state.ordering);
-    $('bottom-bar').classList.toggle('hidden', !state.ordering);
-    $('sheet-backdrop').classList.add('hidden');
-    $('main').classList.toggle('lg:grid', state.ordering);
-    $('main').classList.toggle('pb-28', state.ordering);
-    $('ordering-note').classList.toggle('hidden', state.ordering);
     document.querySelectorAll('.reward-hint').forEach((el) => el.classList.toggle('hidden', !reward));
     $('reward-banner').classList.toggle('hidden', !reward);
     if (!state.ordering) {
@@ -81,24 +77,44 @@
     }
   }
 
+  // Điều hướng giữa Trang chính / Menu / Góp ý theo hash (nút Back của điện thoại vẫn dùng được)
+  function route() {
+    const hash = location.hash;
+    const view = hash === '#gop-y' ? 'feedback' : hash === '#menu' || hash === '#don-da-dat' ? 'menu' : 'home';
+    state.view = view;
+    const inMenu = view === 'menu';
+    const showSide = inMenu && state.ordering;
+    $('home-view').classList.toggle('hidden', view !== 'home');
+    $('main').classList.toggle('hidden', view === 'home');
+    $('tabs-nav').classList.toggle('hidden', !inMenu);
+    $('menu-section').classList.toggle('hidden', !inMenu);
+    $('feedback-section').classList.toggle('hidden', view !== 'feedback');
+    $('side').classList.toggle('hidden', !showSide);
+    $('bottom-bar').classList.toggle('hidden', !showSide);
+    $('main').classList.toggle('lg:grid', showSide);
+    $('main').classList.toggle('pb-28', showSide);
+    $('ordering-note').classList.toggle('hidden', !inMenu || state.ordering);
+    closeSheet();
+    if (hash === '#don-da-dat' && showSide) {
+      if (window.innerWidth < 1024) openSheet('order-card');
+      else $('order-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo(0, 0);
+    }
+  }
+
   function renderTabs() {
-    const btn = (key, label, extra = '') => {
-      const active = state.tab === key;
-      return `<button role="tab" data-tab="${esc(key)}" aria-selected="${active}"
-        class="shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition ${extra}
-        ${active ? 'bg-brand-700 text-white shadow' : 'bg-white text-brand-800 border border-cream-200 hover:bg-brand-50'}">${label}</button>`;
-    };
-    $('tabs').innerHTML =
-      state.categories.map((c) => btn(c.slug, `${CATEGORY_ICON[c.slug] || ''} ${esc(c.name)}`)).join('') +
-      btn('feedback', '💬 Góp ý & Phản hồi', 'sm:ml-auto');
+    $('tabs').innerHTML = state.categories
+      .map((c) => {
+        const active = state.tab === c.slug;
+        return `<button role="tab" data-tab="${esc(c.slug)}" aria-selected="${active}"
+          class="shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition
+          ${active ? 'bg-brand-700 text-white shadow' : 'bg-white text-brand-800 border border-cream-200 hover:bg-brand-50'}">${CATEGORY_ICON[c.slug] || ''} ${esc(c.name)}</button>`;
+      })
+      .join('');
   }
 
   function renderMenu() {
-    const isFeedback = state.tab === 'feedback';
-    $('menu-section').classList.toggle('hidden', isFeedback);
-    $('feedback-section').classList.toggle('hidden', !isFeedback);
-    if (isFeedback) return;
-
     const cat = state.categories.find((c) => c.slug === state.tab);
     if (!cat) return;
     $('cat-title').textContent = cat.name;
@@ -181,7 +197,7 @@
     $('bar-total').textContent = money(total);
     const btn = $('submit-order');
     btn.disabled = !lines.length || !state.tableOk;
-    btn.textContent = state.tableOk ? 'Gửi đơn cho bếp' : 'Quét QR tại bàn để gọi món';
+    btn.textContent = state.tableOk ? 'Đặt đơn' : 'Quét QR tại bàn để gọi món';
   }
 
   async function submitOrder() {
@@ -206,7 +222,7 @@
       renderMenu();
       renderCart();
       renderOrder();
-      toast('Đã gửi đơn! Bếp đang chuẩn bị món cho bạn 🍗');
+      toast('Đã đặt đơn! Bạn có thể xem và sửa đơn bên dưới 🍗');
       $('order-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       toast(e.message, 'error');
@@ -229,17 +245,31 @@
 
   function renderOrder() {
     const o = state.order;
+    const active = o ? o.items.filter((i) => i.status !== 'cancelled') : [];
+    $('home-order').classList.toggle('hidden', !active.length);
+    $('home-order-count').textContent = active.length ? `(${active.reduce((s, i) => s + i.quantity, 0)} món)` : '';
     if (!o || !o.items.length) {
-      $('order-body').innerHTML = 'Chưa có món nào được gửi.';
+      $('order-body').innerHTML = 'Chưa có món nào được đặt.';
       return;
     }
     const rows = o.items
       .map((i) => {
         const st = STATUS[i.status] || STATUS.pending;
+        // Món "Đang chờ" (bếp chưa làm) khách được đổi số lượng / bỏ món; ly nước tặng (0đ) không sửa
+        const editable = i.status === 'pending' && i.price > 0;
+        const qty = editable
+          ? `<div class="flex items-center gap-1.5 mt-1">
+              <button data-oi="${i.id}" data-qty="${i.quantity - 1}" class="w-7 h-7 rounded-full border border-brand-700 text-brand-800 font-bold" aria-label="Bớt">−</button>
+              <span class="w-5 text-center font-semibold">${i.quantity}</span>
+              <button data-oi="${i.id}" data-qty="${i.quantity + 1}" class="w-7 h-7 rounded-full bg-brand-700 text-white font-bold" aria-label="Thêm" ${i.quantity >= 50 ? 'disabled' : ''}>+</button>
+              <button data-oi="${i.id}" data-qty="0" class="ml-1 text-xs text-red-600 hover:underline">Bỏ món</button>
+            </div>`
+          : '';
         return `<div class="flex items-start gap-2 py-2">
           <div class="flex-1 min-w-0">
-            <div class="font-medium text-stone-800 ${i.status === 'cancelled' ? 'line-through text-stone-400' : ''}">${i.quantity} × ${esc(i.name)}</div>
+            <div class="font-medium text-stone-800 ${i.status === 'cancelled' ? 'line-through text-stone-400' : ''}">${editable ? '' : i.quantity + ' × '}${esc(i.name)}</div>
             ${i.note ? `<div class="text-xs text-stone-500">${esc(i.note)}</div>` : ''}
+            ${qty}
           </div>
           <span class="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${st.cls}">${st.label}</span>
           <span class="shrink-0 w-20 text-right text-stone-700">${money(i.price * i.quantity)}</span>
@@ -247,7 +277,7 @@
       })
       .join('');
     $('order-body').innerHTML = `
-      <div class="text-xs text-stone-400 mb-1">Đơn #${o.id}</div>
+      <div class="text-xs text-stone-400 mb-1">Đơn #${o.id} · Món "Đang chờ" có thể sửa số lượng hoặc bỏ. Muốn gọi thêm, chọn món ở Menu rồi bấm Đặt đơn.</div>
       <div class="divide-y divide-stone-100">${rows}</div>
       <div class="border-t border-stone-200 mt-2 pt-2 space-y-1 text-stone-700">
         <div class="flex justify-between"><span>Tạm tính</span><span>${money(o.subtotal)}</span></div>
@@ -255,6 +285,21 @@
         <div class="flex justify-between font-bold text-brand-800 text-base"><span>Tổng tạm tính</span><span>${money(o.total)}</span></div>
       </div>
       <p class="text-xs text-stone-400 mt-2">Vui lòng thanh toán tại quầy thu ngân khi dùng bữa xong.</p>`;
+  }
+
+  async function editOrderItem(btn) {
+    const quantity = Number(btn.dataset.qty);
+    if (quantity === 0 && !confirm('Bỏ món này khỏi đơn?')) return;
+    btn.disabled = true;
+    try {
+      const { order } = await api(`/public/order-items/${btn.dataset.oi}`, { method: 'PATCH', body: { table: tableNumber, quantity } });
+      state.order = order;
+      renderOrder();
+      toast(quantity === 0 ? 'Đã bỏ món khỏi đơn' : 'Đã cập nhật số lượng');
+    } catch (e) {
+      toast(e.message, 'error');
+      loadOrder();
+    }
   }
 
   // ---------- Góp ý ----------
@@ -331,7 +376,8 @@
       renderTabs();
       renderMenu();
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (t.dataset.add) changeQty(t.dataset.add, 1);
+    } else if (t.dataset.oi) editOrderItem(t);
+    else if (t.dataset.add) changeQty(t.dataset.add, 1);
     else if (t.dataset.dec) changeQty(t.dataset.dec, -1);
     else if (t.dataset.star) {
       state.rating = Number(t.dataset.star);
@@ -351,6 +397,7 @@
   $('open-order').addEventListener('click', () => openSheet('order-card'));
   $('sheet-close').addEventListener('click', closeSheet);
   $('sheet-backdrop').addEventListener('click', closeSheet);
+  window.addEventListener('hashchange', route);
 
   renderStars();
   renderVouchers();

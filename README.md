@@ -37,10 +37,11 @@ lalida/
 ## Tính năng
 
 **Khách hàng** (`/order?table=X`, không cần đăng nhập)
-- Quét QR tự nhận số bàn; tab `Cơm`, `Đồ Ăn`, `Canh`, `Đồ Uống`, `Gọi Thêm`, `Góp ý & Phản hồi`.
-- **Mặc định khách chỉ xem Thực đơn và Góp ý & Phản hồi**; nhân viên gọi món cho bàn trong trang Admin.
+- Quét QR tự nhận số bàn → **Trang chính** có nút **Menu**, bên dưới là **Góp ý & Phản hồi** kèm slogan *"Góp ý ngay - Tặng 1 ly nước cho hóa đơn lần sau"*.
+- Bấm **Menu** mới hiện danh sách món theo tab `Cơm`, `Đồ Ăn`, `Canh`, `Đồ Uống`, `Gọi Thêm` → chọn món → **Đặt đơn**.
+- Panel **Đơn đã đặt**: trạng thái từng món (*Đang chờ → Đang làm → Đã lên món*), tạm tính + VAT, tự cập nhật mỗi 5 giây. Khách **sửa đơn**: đổi số lượng hoặc bỏ món còn "Đang chờ" (bếp chưa làm); gọi thêm thì chọn món rồi bấm Đặt đơn (cộng vào cùng đơn).
 - **Góp ý nhận quà**: khách đang dùng bữa (bàn có đơn đang mở) viết góp ý sẽ nhận mã `LLD-XXXXXX` tặng 1 ly nước cho **lần ăn sau** (mã hiện trên điện thoại khách, có hạn dùng; mặc định 1 mã/lượt ăn của bàn, 30 ngày).
-- *Tuỳ chọn* (bật trong Cài đặt → "Cho phép khách tự gọi món qua QR"): giỏ hàng, gửi đơn cho bếp, panel **Đơn đã đặt** với trạng thái (*Đang chờ → Đang làm → Đã lên món*) và tạm tính + VAT.
+- Có thể tắt khách tự đặt món trong Cài đặt → "Cho phép khách tự gọi món qua QR" (khi đó khách chỉ xem Menu và Góp ý, nhân viên gọi món cho bàn).
 
 **Quản trị** (`/admin`)
 - Đăng nhập bằng mật khẩu; **Thu chi & Lợi nhuận** yêu cầu thêm **mã PIN cấp 2** (phiên 30 phút, có nút khoá lại). Sai 5 lần sẽ bị khoá 15 phút.

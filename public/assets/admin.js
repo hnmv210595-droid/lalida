@@ -1220,7 +1220,7 @@
           <div class="rounded-xl bg-cream-100 p-3 space-y-2">
             <div class="font-medium">Khách quét QR & quà tặng góp ý</div>
             <label class="flex items-start gap-2 text-sm"><input type="checkbox" name="customer_ordering" class="mt-1" ${s.customer_ordering === '1' ? 'checked' : ''} />
-              <span>Cho phép khách tự gọi món qua QR <span class="block text-xs text-stone-500">Tắt (mặc định): khách chỉ xem Thực đơn và Góp ý & Phản hồi; nhân viên gọi món cho bàn.</span></span></label>
+              <span>Cho phép khách tự gọi món qua QR <span class="block text-xs text-stone-500">Bật (mặc định): khách chọn món, đặt đơn, xem và sửa đơn. Tắt: khách chỉ xem Thực đơn và Góp ý & Phản hồi; nhân viên gọi món cho bàn.</span></span></label>
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="feedback_reward_enabled" ${s.feedback_reward_enabled === '1' ? 'checked' : ''} /> Tặng 1 ly nước (lần sau) cho khách góp ý</label>
             <div class="grid grid-cols-2 gap-3">
               <div><label class="text-xs font-medium">Số mã tặng / lượt ăn của bàn</label><input name="vouchers_per_order" type="number" min="1" max="20" value="${esc(s.vouchers_per_order || '1')}" class="input mt-1" /></div>
