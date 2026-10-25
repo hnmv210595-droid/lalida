@@ -1,0 +1,16 @@
+# Cloudflare Pages (frontend tĩnh trong ./public) + Pages Functions (Workers, thư mục ./functions) + D1
+name = "lalida"
+compatibility_date = "2025-01-15"
+pages_build_output_dir = "./public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lalida-db"
+# Thay bằng database_id thật sau khi chạy: npx wrangler d1 create lalida-db
+database_id = "698af3db-a21b-4ac5-8df4-ee00e3c5c55c"
+
+# Bí mật (KHÔNG ghi vào file này) - đặt bằng lệnh:
+#   npx wrangler pages secret put SESSION_SECRET   (chuỗi ngẫu nhiên >= 32 ký tự)
+#   npx wrangler pages secret put ADMIN_PASSWORD   (mật khẩu Admin ban đầu)
+#   npx wrangler pages secret put FINANCE_PIN      (mã PIN cấp 2 ban đầu, 4-8 chữ số)
+# Khi chạy local, khai báo trong file .dev.vars (xem .dev.vars.example).

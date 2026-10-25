@@ -1,0 +1,4 @@
+# Sao chép file này thành .dev.vars để chạy local (KHÔNG commit .dev.vars)
+SESSION_SECRET=thay-bang-chuoi-ngau-nhien-dai-it-nhat-32-ky-tu
+ADMIN_PASSWORD=lalida-admin-123
+FINANCE_PIN=246810
