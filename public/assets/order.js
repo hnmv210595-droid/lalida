@@ -48,21 +48,33 @@
   }
 
   // ---------- Thực đơn ----------
-  async function loadMenu() {
+  // Tải thực đơn; gọi lại mỗi 30 giây để cập nhật món "Đã bán hết" mà không đổi màn hình đang xem
+  async function loadMenu(refresh = false) {
     try {
       const data = await api('/public/menu');
       Object.assign(state, { categories: data.categories, items: data.items, settings: data.settings });
       applyMode();
-      // Bỏ món trong giỏ không còn phục vụ
-      for (const id of Object.keys(state.cart)) if (!state.items.some((i) => i.id === Number(id))) delete state.cart[id];
-      state.tab = state.categories[0]?.slug;
+      // Bỏ khỏi giỏ các món đã bán hết / không còn phục vụ
+      const soldOut = [];
+      for (const id of Object.keys(state.cart)) {
+        const item = state.items.find((i) => i.id === Number(id));
+        if (!item?.is_available) {
+          if (item) soldOut.push(item.name);
+          delete state.cart[id];
+        }
+      }
+      if (soldOut.length) {
+        storage.set(CART_KEY, state.cart);
+        toast(`${soldOut.join(', ')} đã bán hết, đã bỏ khỏi giỏ`, 'error');
+      }
+      if (!state.categories.some((c) => c.slug === state.tab)) state.tab = state.categories[0]?.slug;
       renderTabs();
       renderMenu();
       renderCart();
     } catch (e) {
-      $('menu-grid').innerHTML = `<div class="text-red-600">${esc(e.message)}</div>`;
+      if (!refresh) $('menu-grid').innerHTML = `<div class="text-red-600">${esc(e.message)}</div>`;
     }
-    route();
+    if (!refresh) route();
   }
 
   // Khách tự gọi món (bật/tắt trong Cài đặt Admin); tắt thì chỉ xem thực đơn & góp ý
@@ -129,14 +141,15 @@
         const img = i.image_url
           ? `<img src="${esc(i.image_url)}" alt="" loading="lazy" class="w-full h-full object-cover" />`
           : `<span class="text-4xl">${CATEGORY_ICON[cat.slug] || '🍽️'}</span>`;
-        return `<article class="bg-white rounded-2xl border border-cream-200 shadow-sm p-3 flex gap-3">
-          <div class="w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-xl bg-cream-100 overflow-hidden flex items-center justify-center">${img}</div>
+        const soldOut = !i.is_available;
+        return `<article class="rounded-2xl border shadow-sm p-3 flex gap-3 ${soldOut ? 'bg-stone-100 border-stone-200' : 'bg-white border-cream-200'}">
+          <div class="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-xl bg-cream-100 overflow-hidden flex items-center justify-center ${soldOut ? 'grayscale opacity-60' : ''}">${img}</div>
           <div class="flex-1 min-w-0 flex flex-col">
-            <h3 class="font-semibold leading-snug">${esc(i.name)}</h3>
+            <h3 class="font-semibold leading-snug ${soldOut ? 'text-stone-400' : ''}">${esc(i.name)}</h3>
             ${i.description ? `<p class="text-xs text-stone-500 mt-0.5 line-clamp-2">${esc(i.description)}</p>` : ''}
             <div class="mt-auto flex items-center justify-between pt-2">
-              <span class="font-bold text-clay-600">${money(i.price)}</span>
-              ${qtyControl(i.id, qty)}
+              <span class="font-bold ${soldOut ? 'text-stone-400 line-through' : 'text-clay-600'}">${money(i.price)}</span>
+              ${soldOut ? '<span class="rounded-full bg-red-600 text-white text-xs font-bold px-3 py-1.5">Đã bán hết</span>' : qtyControl(i.id, qty)}
             </div>
           </div>
         </article>`;
@@ -226,7 +239,7 @@
       $('order-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       toast(e.message, 'error');
-      if (e.status === 409) loadMenu();
+      if (e.status === 409) loadMenu(true);
     } finally {
       renderCart();
     }
@@ -403,4 +416,5 @@
   renderVouchers();
   renderCart();
   loadMenu().then(initTable);
+  setInterval(() => loadMenu(true), 30000);
 })();

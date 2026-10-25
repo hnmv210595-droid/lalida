@@ -96,7 +96,7 @@ export async function addItemsToTable(env, body) {
     .bind(JSON.stringify(lines.map((l) => l.id)))
     .all();
   const byId = new Map(menu.map((m) => [m.id, m]));
-  for (const l of lines) if (!byId.has(l.id)) throw new HttpError(409, 'Có món đã hết hoặc không còn phục vụ, vui lòng tải lại thực đơn');
+  for (const l of lines) if (!byId.has(l.id)) throw new HttpError(409, 'Có món đã bán hết, vui lòng kiểm tra lại giỏ hàng');
 
   // Chỉ mục duy nhất ux_orders_open_table đảm bảo không tạo trùng đơn mở
   await env.DB.prepare('INSERT OR IGNORE INTO orders (table_id, table_number, status) VALUES (?, ?, ?)')

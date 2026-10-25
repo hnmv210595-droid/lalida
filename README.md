@@ -49,7 +49,7 @@ lalida/
 - **🎁 Mã tặng nước**: trên đơn của bàn, nhập mã khách đưa → chọn ly nước bất kỳ trong mục Đồ Uống → món được thêm vào hoá đơn giá 0đ và gửi xuống bếp. Mã chỉ dùng 1 lần, không dùng được ngay trong lượt ăn đã góp ý; huỷ món tặng thì mã được trả lại.
 - **In hoá đơn** khổ 58mm/80mm qua `window.print()` hoặc máy in nhiệt **Bluetooth (Web Bluetooth, ESC/POS)**.
 - **Bàn & QR**: thêm/xoá bàn, QR tự sinh `https://lalida.net/order?table=X`, in từng mã hoặc cả tờ.
-- **Thực đơn**: thêm/sửa/xoá món, bật/tắt "Hết món".
+- **Thực đơn**: thêm/sửa/xoá món; nút **Hết hàng** / **Bán lại** ở từng món — món hết hàng vẫn hiện trên menu của khách với nhãn **"Đã bán hết"** và không đặt được.
 - **Thu chi & Lợi nhuận**: ghi thu/chi, báo cáo theo **Ngày / Tháng / Năm**, biểu đồ, Lợi nhuận = Doanh thu − Chi phí, phân tích theo hạng mục, đổi mã PIN.
 - **Nhân sự & Chấm công**: CRUD nhân viên (lương tháng, trợ cấp, hoặc lương giờ), vào ca/ra ca 1 chạm, sửa tay, tổng hợp giờ công theo tháng.
 - **💵 Bảng lương** (cần mã PIN cấp 2): trả vào **ngày 5** tháng sau (có nhắc trên menu khi đến hạn).

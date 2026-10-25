@@ -540,11 +540,17 @@
               <tbody>${
                 list
                   .map(
-                    (i) => `<tr>
-                  <td><div class="font-medium">${esc(i.name)}</div><div class="text-xs text-stone-500">${esc(i.description || '')}</div></td>
+                    (i) => `<tr class="${i.is_available ? '' : 'bg-stone-50'}">
+                  <td><div class="font-medium ${i.is_available ? '' : 'text-stone-400 line-through'}">${esc(i.name)}</div><div class="text-xs text-stone-500">${esc(i.description || '')}</div></td>
                   <td class="text-right font-semibold whitespace-nowrap">${money(i.price)}</td>
-                  <td><button data-toggle="${i.id}" class="text-xs px-2 py-1 rounded-full ${i.is_available ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-200 text-stone-600'}">${i.is_available ? 'Đang bán' : 'Hết món'}</button></td>
-                  <td class="text-right whitespace-nowrap"><button data-edit="${i.id}" class="btn btn-ghost !py-1">Sửa</button> <button data-del="${i.id}" class="btn btn-danger !py-1">Xoá</button></td>
+                  <td>${i.is_available ? '<span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-800">Đang bán</span>' : '<span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold">Đã bán hết</span>'}</td>
+                  <td class="text-right whitespace-nowrap">
+                    ${
+                      i.is_available
+                        ? `<button data-toggle="${i.id}" class="btn !py-1 bg-red-600 hover:bg-red-700 text-white">Hết hàng</button>`
+                        : `<button data-toggle="${i.id}" class="btn !py-1 bg-emerald-600 hover:bg-emerald-700 text-white">Bán lại</button>`
+                    }
+                    <button data-edit="${i.id}" class="btn btn-ghost !py-1">Sửa</button> <button data-del="${i.id}" class="btn btn-danger !py-1">Xoá</button></td>
                 </tr>`
                   )
                   .join('') || '<tr><td colspan="4" class="text-stone-400">Chưa có món</td></tr>'
@@ -568,7 +574,7 @@
             <div><label class="text-sm font-medium">Thứ tự</label><input name="sort_order" type="number" min="0" value="${item.sort_order ?? 0}" class="input mt-1" /></div>
           </div>
           <div><label class="text-sm font-medium">Link ảnh (không bắt buộc)</label><input name="image_url" type="url" maxlength="500" value="${esc(item.image_url || '')}" class="input mt-1" placeholder="https://…" /></div>
-          <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_available" ${item.is_available === 0 ? '' : 'checked'} /> Đang bán</label>
+          <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_available" ${item.is_available === 0 ? '' : 'checked'} /> Đang bán (bỏ chọn = Đã bán hết)</label>
           <button class="btn btn-primary w-full py-3">Lưu</button>
         </form>`,
         (root) =>
@@ -586,8 +592,10 @@
       (b) =>
         (b.onclick = async () => {
           const i = items.find((x) => x.id === Number(b.dataset.toggle));
+          b.disabled = true;
           try {
             await save(i.id, { ...i, is_available: !i.is_available });
+            toast(i.is_available ? `${i.name}: đã bán hết - khách sẽ thấy "Đã bán hết"` : `${i.name}: đã mở bán lại`);
             renderMenu();
           } catch (e) {
             toast(e.message, 'error');

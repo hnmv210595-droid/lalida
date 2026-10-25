@@ -54,8 +54,9 @@ const PAYMENT_METHODS = ['cash', 'transfer', 'card'];
 route('GET', '/public/menu', 'public', async ({ env }) => {
   const [cats, items, settings] = await Promise.all([
     env.DB.prepare('SELECT id, slug, name FROM categories ORDER BY sort_order, id').all(),
+    // Gồm cả món hết hàng (is_available = 0) để khách thấy "Đã bán hết"; đặt món hết hàng bị chặn ở addItemsToTable
     env.DB.prepare(
-      'SELECT id, category_id, name, description, price, image_url FROM menu_items WHERE is_available = 1 ORDER BY sort_order, id'
+      'SELECT id, category_id, name, description, price, image_url, is_available FROM menu_items ORDER BY sort_order, id'
     ).all(),
     getSettings(env),
   ]);
