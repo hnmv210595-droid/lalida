@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com/3.4.16"></script>
-  <script src="/assets/tailwind-config.js"></script>
+  <script src="/assets/tailwind-config.js?v=20261025b"></script>
   <style>
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { scrollbar-width: none; }
@@ -41,7 +41,7 @@
   </header>
 
   <!-- TRANG CHÍNH sau khi quét QR: Menu, bên dưới là Góp ý & Phản hồi -->
-  <section id="home-view" class="hidden max-w-md mx-auto px-4 py-6 space-y-4">
+  <section id="home-view" class="max-w-md mx-auto px-4 py-6 space-y-4">
     <p class="text-center text-brand-800 font-semibold">Chào mừng quý khách đến với LaLiDa! 🍗</p>
     <a href="#menu" class="block rounded-3xl bg-brand-700 hover:bg-brand-800 text-white p-6 shadow-lg text-center transition">
       <div class="text-5xl">🍽️</div>
@@ -146,7 +146,18 @@
     <button id="open-cart" class="flex-[1.4] rounded-xl bg-clay-500 text-white font-semibold py-3 text-sm">🛒 <span id="bar-count">0</span> món · <span id="bar-total">0đ</span></button>
   </div>
 
-  <script src="/assets/common.js"></script>
-  <script src="/assets/order.js"></script>
+  <script src="/assets/common.js?v=20261025b"></script>
+  <script src="/assets/order.js?v=20261025b"></script>
+  <!-- Dự phòng: nếu trình duyệt không chạy được order.js (quá cũ / lỗi tải) thì báo cho khách thay vì để trang trống -->
+  <script>
+    window.addEventListener('load', function () {
+      if (window.LLOrderReady) return;
+      var box = document.createElement('div');
+      box.style.cssText = 'margin:16px;padding:14px;border-radius:12px;background:#fef3c7;color:#78350f;font-size:15px;text-align:center';
+      box.innerHTML = 'Không tải được thực đơn. Vui lòng <b>tải lại trang</b> hoặc mở bằng trình duyệt <b>Chrome / Safari</b>.<br/>' +
+        '<button onclick="location.reload()" style="margin-top:10px;padding:8px 18px;border-radius:10px;background:#3b512a;color:#fff;font-weight:600">Tải lại</button>';
+      document.body.insertBefore(box, document.body.children[1]);
+    });
+  </script>
 </body>
 </html>

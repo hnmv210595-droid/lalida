@@ -417,4 +417,5 @@
   renderCart();
   loadMenu().then(initTable);
   setInterval(() => loadMenu(true), 30000);
+  window.LLOrderReady = true; // báo cho đoạn dự phòng trong order.html là script đã chạy
 })();
