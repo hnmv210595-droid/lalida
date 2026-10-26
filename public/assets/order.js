@@ -1,6 +1,6 @@
 // Trang gọi món cho khách: /order?table=X
 (() => {
-  const { api, money, esc, toast, storage, STATUS, CATEGORY_ICON } = window.LL;
+  const { api, money, esc, toast, storage, STATUS, CATEGORY_ICON, orderLabel } = window.LL;
   const $ = (id) => document.getElementById(id);
 
   // Hai chế độ dùng chung trang này: gọi món tại bàn (/order?table=X) và Đặt online (/online)
@@ -9,7 +9,8 @@
   const tableNumber = !ONLINE && /^\d+$/.test(tableParam || '') ? Number(tableParam) : null;
   const CART_KEY = ONLINE ? 'lalida_cart_online' : `lalida_cart_${tableNumber || 0}`;
   const VOUCHER_KEY = 'lalida_vouchers';
-  const ONLINE_ORDER_KEY = 'lalida_online_order'; // { id, token } của đơn online gần nhất
+  // { id, token } đơn của chính khách trên máy này: mỗi bàn một khoá riêng, đơn online một khoá
+  const MINE_KEY = ONLINE ? 'lalida_online_order' : `lalida_table_order_${tableNumber || 0}`;
   const CUSTOMER_KEY = 'lalida_customer'; // nhớ Tên / SĐT / Địa chỉ cho lần đặt sau
 
   const state = {
@@ -24,11 +25,11 @@
     rating: 5,
     ordering: false, // khách tự gọi món (bật/tắt trong Cài đặt Admin)
     vouchers: storage.get(VOUCHER_KEY, []), // mã tặng nước đã nhận trên máy này
-    online: storage.get(ONLINE_ORDER_KEY, null),
+    mine: storage.get(MINE_KEY, null),
   };
 
   // Tham số nhận diện đơn của khách khi gọi API: bàn hoặc đơn online
-  const owner = () => (ONLINE ? { order_id: state.online?.id, token: state.online?.token } : { table: tableNumber });
+  const owner = () => (state.mine ? { order_id: state.mine.id, token: state.mine.token } : {});
 
   // ---------- Bàn / Đặt online ----------
   async function initTable() {
@@ -239,7 +240,7 @@
   // Đặt online: đơn trước còn mở thì gọi thêm vào đơn đó, chưa có thì hiện form Tên / SĐT / Địa chỉ
   function submitClick() {
     if (!cartLines().length || !state.tableOk) return;
-    if (ONLINE && !(state.online && state.order?.status === 'open')) return openOnlineForm();
+    if (ONLINE && !(state.mine && state.order?.status === 'open')) return openOnlineForm();
     submitOrder().catch(() => {});
   }
 
@@ -267,15 +268,14 @@
         note: $('order-note').value,
         items: lines.map((l) => ({ id: l.item.id, quantity: l.qty, note: l.note })),
       };
-      let order;
-      if (ONLINE) {
-        const res = await api('/public/online-orders', { method: 'POST', body: { ...body, ...(customer || owner()) } });
-        order = res.order;
-        state.online = { id: order.id, token: res.token };
-        storage.set(ONLINE_ORDER_KEY, state.online);
-      } else {
-        ({ order } = await api('/public/orders', { method: 'POST', body: { ...body, table: tableNumber } }));
-      }
+      // Đơn của mình còn mở -> gọi thêm vào đó; chưa có / đã thanh toán -> máy chủ tạo đơn mới (Bàn X-n hoặc đơn online)
+      const mineOpen = state.order?.status === 'open' ? owner() : {};
+      const res = ONLINE
+        ? await api('/public/online-orders', { method: 'POST', body: { ...body, ...(customer || mineOpen) } })
+        : await api('/public/orders', { method: 'POST', body: { ...body, table: tableNumber, ...mineOpen } });
+      const order = res.order;
+      state.mine = { id: order.id, token: res.token };
+      storage.set(MINE_KEY, state.mine);
       state.cart = {};
       storage.set(CART_KEY, state.cart);
       $('order-note').value = '';
@@ -318,21 +318,17 @@
   // ---------- Đơn đã đặt ----------
   async function loadOrder() {
     try {
-      if (ONLINE) {
-        if (!state.online) return renderOrder();
-        const { order } = await api(`/public/online-orders/${state.online.id}?token=${encodeURIComponent(state.online.token)}`);
-        state.order = order;
-      } else {
-        const { order } = await api(`/public/orders?table=${tableNumber}`);
-        state.order = order;
-      }
+      if (!state.mine) return renderOrder();
+      const path = ONLINE ? '/public/online-orders/' : '/public/orders/';
+      const { order } = await api(`${path}${state.mine.id}?token=${encodeURIComponent(state.mine.token)}`);
+      state.order = order;
       renderOrder();
     } catch (e) {
-      if (ONLINE && e.status === 404) {
+      if (e.status === 404) {
         // Đơn không còn (bị xoá) -> quên đơn cũ, lần sau đặt đơn mới
-        state.online = null;
+        state.mine = null;
         state.order = null;
-        storage.set(ONLINE_ORDER_KEY, null);
+        storage.set(MINE_KEY, null);
         renderOrder();
       }
     }
@@ -374,6 +370,7 @@
       .join('');
     $('order-body').innerHTML = `
       ${ONLINE ? customerBlock(o) : ''}
+      ${ONLINE ? '' : `<div class="inline-block rounded-full bg-brand-700 text-white text-sm font-bold px-3 py-1 mb-1">Đơn của bạn: ${esc(orderLabel(o))}</div>`}
       <div class="text-xs text-stone-400 mb-1">Đơn #${o.id} · Món "Đang chờ" có thể sửa số lượng hoặc bỏ. Muốn gọi thêm, chọn món ở Menu rồi bấm Đặt đơn.</div>
       <div class="divide-y divide-stone-100">${rows}</div>
       <div class="border-t border-stone-200 mt-2 pt-2 space-y-1 text-stone-700">
@@ -391,13 +388,13 @@
       🛵 Giao đến: <b>${esc(o.customer_name)}</b> · ${esc(o.customer_phone)}<br />${esc(o.customer_address)}</div>`;
   }
 
-  // Đơn online đã thanh toán / đã huỷ: chỉ xem, lần đặt sau sẽ tạo đơn mới
+  // Đơn của khách đã thanh toán / đã huỷ: chỉ xem, lần đặt sau sẽ tạo đơn mới
   function renderClosedOrder(o) {
     $('home-order').classList.add('hidden');
     const paid = o.status === 'paid';
     $('order-body').innerHTML = `
       <div class="rounded-xl px-3 py-2 mb-2 text-sm font-semibold ${paid ? 'bg-emerald-50 text-emerald-800' : 'bg-stone-100 text-stone-600'}">
-        ${paid ? '✅ Đơn #' + o.id + ' đã hoàn tất. Cảm ơn bạn đã đặt món tại LaLiDa!' : '❌ Đơn #' + o.id + ' đã bị huỷ.'}
+        ${paid ? '✅ ' + esc(ONLINE ? 'Đơn #' + o.id : orderLabel(o)) + ' đã hoàn tất. Cảm ơn bạn đã đặt món tại LaLiDa!' : '❌ ' + esc(ONLINE ? 'Đơn #' + o.id : orderLabel(o)) + ' đã bị huỷ.'}
       </div>
       <div class="text-sm text-stone-600">${o.items
         .filter((i) => i.status !== 'cancelled')
@@ -440,7 +437,8 @@
           rating: state.rating,
           content: $('fb-content').value,
           customer_name: $('fb-name').value,
-          ...(ONLINE ? (state.online ? owner() : {}) : { table: tableNumber }),
+          ...(ONLINE ? {} : { table: tableNumber }),
+          ...owner(),
         },
       });
       e.target.reset();

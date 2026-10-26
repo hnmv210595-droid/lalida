@@ -109,19 +109,27 @@ export async function insertItems(env, order, prepared) {
   return getOrder(env, order.id);
 }
 
-// Thêm món vào đơn đang mở của bàn (tạo đơn mới nếu chưa có)
-export async function addItemsToTable(env, body) {
-  const tableNumber = int(body.table, { min: 1, max: 100000, name: 'Số bàn' });
+// Mã truy cập để khách xem / sửa / gọi thêm vào đơn của mình (lưu trên điện thoại khách)
+export const newAccessToken = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+
+// Tạo đơn mới cho một lượt khách tại bàn: Bàn X-1, X-2... (số tiếp theo trong các đơn đang mở của bàn).
+// Chỉ mục duy nhất ux_orders_open_guest chống trùng số khi nhiều máy cùng gửi -> thử lại.
+export async function createTableOrder(env, tableNumber, prepared) {
   const table = await env.DB.prepare('SELECT * FROM tables WHERE number = ? AND is_active = 1').bind(tableNumber).first();
   if (!table) throw new HttpError(404, `Bàn ${tableNumber} không tồn tại`);
-  const prepared = await prepareItems(env, body);
-
-  // Chỉ mục duy nhất ux_orders_open_table đảm bảo không tạo trùng đơn mở
-  await env.DB.prepare("INSERT OR IGNORE INTO orders (table_id, table_number, status, order_type) VALUES (?, ?, 'open', 'table')")
-    .bind(table.id, table.number)
-    .run();
-  const order = await env.DB.prepare("SELECT id, note FROM orders WHERE table_number = ? AND status = 'open' AND order_type = 'table'")
-    .bind(table.number)
-    .first();
-  return insertItems(env, order, prepared);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const token = newAccessToken();
+    const res = await env.DB.prepare(
+      `INSERT OR IGNORE INTO orders (table_id, table_number, guest_no, order_type, access_token, status)
+       SELECT ?, ?, COALESCE(MAX(guest_no), 0) + 1, 'table', ?, 'open'
+         FROM orders WHERE table_number = ? AND status = 'open' AND order_type = 'table'`
+    )
+      .bind(table.id, table.number, token, table.number)
+      .run();
+    if (res.meta.changes) {
+      const order = await insertItems(env, { id: res.meta.last_row_id, note: null }, prepared);
+      return { order, token };
+    }
+  }
+  throw new HttpError(409, 'Bàn đang có nhiều người cùng đặt, vui lòng thử lại');
 }

@@ -144,7 +144,11 @@
       }
       S.lastItemId = S.summary.last_item_id;
       renderNav();
-      if (S.tab === 'orders' && S.orderMode === 'open') loadOrders();
+      if (S.tab === 'orders') {
+        if ($('count-table')) $('count-table').innerHTML = modeCount(S.summary.open_table_orders);
+        if ($('count-online')) $('count-online').innerHTML = modeCount(S.summary.open_online_orders);
+        if (S.orderMode !== 'paid') loadOrders();
+      }
     } catch {
       /* lần sau thử lại */
     }
@@ -180,10 +184,13 @@
   }
 
   // ================= ĐƠN HÀNG & BẾP (KDS) =================
+  // 3 khu riêng: Tại quán (open) / Online / Đã thanh toán. Đơn đặt trước hiện trước.
+  const modeCount = (n) => (n ? ` <span class="ml-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-red-600 text-white text-[11px]">${n}</span>` : '');
   function renderOrdersView() {
     view().innerHTML = `
       <div class="flex flex-wrap items-center gap-2 mb-4">
-        <button data-mode="open" class="btn ${S.orderMode === 'open' ? 'btn-primary' : 'btn-ghost'}">Đang phục vụ</button>
+        <button data-mode="open" class="btn ${S.orderMode === 'open' ? 'btn-primary' : 'btn-ghost'}">🍽️ Tại quán<span id="count-table">${modeCount(S.summary.open_table_orders)}</span></button>
+        <button data-mode="online" class="btn ${S.orderMode === 'online' ? 'btn-primary' : 'btn-ghost'}">🛵 Online<span id="count-online">${modeCount(S.summary.open_online_orders)}</span></button>
         <button data-mode="paid" class="btn ${S.orderMode === 'paid' ? 'btn-primary' : 'btn-ghost'}">Đã thanh toán</button>
         <input id="paid-date" type="date" value="${S.paidDate}" class="input !w-auto ${S.orderMode === 'paid' ? '' : 'hidden'}" />
         <button id="new-order" class="btn btn-accent ml-auto">＋ Tạo đơn / Gọi món cho bàn</button>
@@ -204,15 +211,15 @@
   }
 
   async function loadOrders() {
-    const q = S.orderMode === 'open' ? '?status=open' : `?status=paid&date=${S.paidDate}`;
+    const q = { open: '?status=open&type=table', online: '?status=open&type=online' }[S.orderMode] || `?status=paid&date=${S.paidDate}`;
     const { orders } = await call('/admin/orders' + q);
     const j = JSON.stringify(orders);
     if (j === S.lastOrdersJson || !$('orders-list')) return; // không đổi -> không vẽ lại
     S.lastOrdersJson = j;
     S.orders = orders;
     $('orders-list').innerHTML = orders.length
-      ? orders.map(S.orderMode === 'open' ? openOrderCard : paidOrderCard).join('')
-      : `<div class="text-stone-500 col-span-full">${S.orderMode === 'open' ? 'Chưa có đơn nào đang phục vụ.' : 'Không có đơn đã thanh toán trong ngày này.'}</div>`;
+      ? orders.map(S.orderMode === 'paid' ? paidOrderCard : openOrderCard).join('')
+      : `<div class="text-stone-500 col-span-full">${{ open: 'Chưa có đơn nào đang phục vụ tại quán.', online: 'Chưa có đơn online nào.' }[S.orderMode] || 'Không có đơn đã thanh toán trong ngày này.'}</div>`;
   }
 
   function openOrderCard(o) {
@@ -305,7 +312,7 @@
         } else if (act === 'pay') {
           return openPayModal(order);
         } else if (act === 'add') {
-          return openCounterOrder(order.table_number);
+          return openCounterOrder(order.table_number, order.id);
         } else if (act === 'voucher') {
           return openVoucherModal(order);
         } else if (act === 'cancel') {
@@ -415,8 +422,13 @@
     );
   }
 
-  async function openCounterOrder(presetTable) {
-    const [{ tables }, { categories, items }] = await Promise.all([call('/admin/tables'), call('/admin/menu')]);
+  // Nhân viên gọi món: chọn bàn, rồi chọn "Khách mới" (tạo Bàn X-n mới) hoặc thêm vào một đơn đang mở của bàn đó
+  async function openCounterOrder(presetTable, presetOrderId) {
+    const [{ tables }, { categories, items }, { orders: openOrders }] = await Promise.all([
+      call('/admin/tables'),
+      call('/admin/menu'),
+      call('/admin/orders?status=open&type=table'),
+    ]);
     if (!tables.length) return toast('Chưa có bàn nào. Hãy thêm bàn trước.', 'error');
     const groups = categories
       .map((c) => {
@@ -427,28 +439,48 @@
             <input type="number" min="0" max="50" value="0" data-menu="${i.id}" class="input !w-20 !py-1" /></div>`).join('')}</div>`;
       })
       .join('');
+    const preset = openOrders.find((o) => o.id === presetOrderId);
+    const orderOptions = (tableNo) =>
+      `<option value="">＋ Khách mới (tạo Bàn ${tableNo}-${Math.max(0, ...openOrders.filter((o) => o.table_number === tableNo).map((o) => o.guest_no || 0)) + 1})</option>` +
+      openOrders
+        .filter((o) => o.table_number === tableNo)
+        .map((o) => `<option value="${o.id}" ${o.id === presetOrderId ? 'selected' : ''}>Thêm vào ${esc(orderLabel(o))} (${money(o.total)})</option>`)
+        .join('');
+    const firstTable = presetTable || tables[0].number;
     openModal(
-      presetTable ? `Thêm món - Bàn ${presetTable}` : 'Tạo đơn tại quầy',
+      preset ? `Thêm món - ${orderLabel(preset)}` : 'Tạo đơn / Gọi món cho bàn',
       `<form id="counter-form" class="space-y-3">
-        <div><label class="text-sm font-medium">Bàn</label>
-          <select name="table" class="input mt-1">${tables.map((t) => `<option value="${t.number}" ${t.number === presetTable ? 'selected' : ''}>${esc(t.name || 'Bàn ' + t.number)}${t.open_order_id ? ' (đang có đơn)' : ''}</option>`).join('')}</select></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="text-sm font-medium">Bàn</label>
+            <select name="table" class="input mt-1">${tables
+              .map((t) => `<option value="${t.number}" ${t.number === firstTable ? 'selected' : ''}>${esc(t.name || 'Bàn ' + t.number)}${t.open_orders ? ` (${t.open_orders} đơn)` : ''}</option>`)
+              .join('')}</select></div>
+          <div><label class="text-sm font-medium">Đơn</label>
+            <select name="order_id" class="input mt-1">${orderOptions(firstTable)}</select></div>
+        </div>
         ${groups}
         <div><label class="text-sm font-medium">Ghi chú</label><input name="note" maxlength="300" class="input mt-1" /></div>
         <button class="btn btn-primary w-full py-3">Gửi bếp</button>
       </form>`,
-      (root) =>
-        onSubmit(root.querySelector('#counter-form'), async (d) => {
+      (root) => {
+        const form = root.querySelector('#counter-form');
+        form.table.onchange = () => (form.order_id.innerHTML = orderOptions(Number(form.table.value)));
+        onSubmit(form, async (d) => {
           const lines = [...root.querySelectorAll('[data-menu]')]
             .map((inp) => ({ id: Number(inp.dataset.menu), quantity: Number(inp.value) }))
             .filter((l) => l.quantity > 0);
           if (!lines.length) throw new Error('Chưa nhập số lượng món nào');
-          await call('/admin/orders', { method: 'POST', body: { table: Number(d.table), note: d.note, items: lines } });
+          const { order } = await call('/admin/orders', {
+            method: 'POST',
+            body: { table: Number(d.table), order_id: d.order_id ? Number(d.order_id) : null, note: d.note, items: lines },
+          });
           closeModal();
-          toast('Đã gửi đơn xuống bếp');
+          toast(`Đã gửi ${orderLabel(order)} xuống bếp`);
           S.orderMode = 'open';
           if (S.tab === 'orders') renderOrdersView();
           pollTick();
-        })
+        });
+      }
     );
   }
 
@@ -487,7 +519,7 @@
             (t) => `<div class="card p-4 text-center" data-table-card="${t.number}">
             <div class="flex justify-between items-center">
               <b class="text-brand-800">${esc(t.name || 'Bàn ' + t.number)}</b>
-              ${t.open_order_id ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Có khách</span>' : '<span class="text-[11px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">Trống</span>'}
+              ${t.open_orders ? `<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Có khách (${t.open_orders} đơn)</span>` : '<span class="text-[11px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">Trống</span>'}
             </div>
             <div class="qr flex justify-center my-3" data-qr="${t.number}"></div>
             <a href="${esc(tableUrl(t.number))}" target="_blank" rel="noopener" class="text-[11px] text-stone-500 break-all hover:underline">${esc(tableUrl(t.number))}</a>

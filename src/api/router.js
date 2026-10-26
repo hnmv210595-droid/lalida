@@ -5,7 +5,8 @@ import {
   makeToken, cookie, isAdmin, isFinance, checkCredential, saveCredential, guardAttempts, safeEqual,
 } from './auth.js';
 import {
-  getSettings, attachItems, getOrder, addItemsToTable, prepareItems, insertItems, computeTotals, vatPercent, calcPay,
+  getSettings, attachItems, getOrder, createTableOrder, prepareItems, insertItems, newAccessToken,
+  computeTotals, vatPercent, calcPay,
 } from './store.js';
 
 const routes = [];
@@ -45,11 +46,11 @@ async function requireOnlineOrdering(env) {
   if ((await getSettings(env)).online_ordering !== '1') throw new HttpError(403, 'Quán tạm ngừng nhận đơn online');
 }
 
-// Đơn online: khách giữ access_token trên máy để xem / sửa / gọi thêm vào đơn của mình
-async function findOnlineOrder(env, orderId, token) {
+// Mỗi khách (mỗi điện thoại) giữ access_token của đơn mình để xem / sửa / gọi thêm - cả đơn tại bàn và đơn online
+async function findOwnedOrder(env, orderId, token, type) {
   const id = int(orderId, { min: 1, name: 'Mã đơn' });
-  const o = await env.DB.prepare("SELECT * FROM orders WHERE id = ? AND order_type = 'online'").bind(id).first();
-  if (!o || !token || !safeEqual(String(token), o.access_token || '')) throw new HttpError(404, 'Không tìm thấy đơn online');
+  const o = await env.DB.prepare('SELECT * FROM orders WHERE id = ? AND order_type = ?').bind(id, type).first();
+  if (!o || !token || !safeEqual(String(token), o.access_token || '')) throw new HttpError(404, 'Không tìm thấy đơn của bạn');
   return o;
 }
 
@@ -71,7 +72,7 @@ const PAYMENT_METHODS = ['cash', 'transfer', 'card'];
 route('GET', '/public/menu', 'public', async ({ env }) => {
   const [cats, items, settings] = await Promise.all([
     env.DB.prepare('SELECT id, slug, name FROM categories ORDER BY sort_order, id').all(),
-    // Gồm cả món hết hàng (is_available = 0) để khách thấy "Đã bán hết"; đặt món hết hàng bị chặn ở addItemsToTable
+    // Gồm cả món hết hàng (is_available = 0) để khách thấy "Đã bán hết"; đặt món hết hàng bị chặn ở prepareItems
     env.DB.prepare(
       'SELECT id, category_id, name, description, price, image_url, is_available FROM menu_items ORDER BY sort_order, id'
     ).all(),
@@ -87,20 +88,23 @@ route('GET', '/public/tables/:number', 'public', async ({ env, params }) => {
   return t;
 });
 
-route('GET', '/public/orders', 'public', async ({ env, url }) => {
-  await requireCustomerOrdering(env);
-  const table = int(url.searchParams.get('table'), { min: 1, name: 'Số bàn' });
-  const order = await env.DB.prepare("SELECT * FROM orders WHERE table_number = ? AND status = 'open' AND order_type = 'table'")
-    .bind(table)
-    .first();
-  if (!order) return { order: null };
-  const [full] = await attachItems(env, [order]);
-  return { order: full };
-});
-
+// Gọi món tại bàn: mỗi điện thoại quét QR có đơn riêng (Bàn 1-1, Bàn 1-2...).
+// Gửi kèm order_id + token của đơn mình đang mở ở bàn này -> gọi thêm vào đơn đó; ngược lại tạo đơn mới.
 route('POST', '/public/orders', 'public', async ({ env, body }) => {
   await requireCustomerOrdering(env);
-  return { order: await addItemsToTable(env, body) };
+  const table = int(body.table, { min: 1, max: 100000, name: 'Số bàn' });
+  const prepared = await prepareItems(env, body);
+  if (body.order_id && body.token) {
+    const o = await findOwnedOrder(env, body.order_id, body.token, 'table').catch(() => null);
+    if (o && o.status === 'open' && o.table_number === table) return { order: await insertItems(env, o, prepared), token: body.token };
+  }
+  return createTableOrder(env, table, prepared);
+});
+
+route('GET', '/public/orders/:id', 'public', async ({ env, params, url }) => {
+  await requireCustomerOrdering(env);
+  const o = await findOwnedOrder(env, params.id, url.searchParams.get('token'), 'table');
+  return { order: (await attachItems(env, [o]))[0] };
 });
 
 // ---------- ĐẶT ONLINE (lalida.net/online): khách điền Tên, SĐT, Địa chỉ ----------
@@ -108,7 +112,7 @@ route('POST', '/public/orders', 'public', async ({ env, body }) => {
 route('POST', '/public/online-orders', 'public', async ({ env, request, body }) => {
   await requireOnlineOrdering(env);
   if (body.order_id && body.token) {
-    const o = await findOnlineOrder(env, body.order_id, body.token);
+    const o = await findOwnedOrder(env, body.order_id, body.token, 'online');
     if (o.status === 'open') return { order: await insertItems(env, o, await prepareItems(env, body)), token: body.token };
   }
   const name = str(body.customer_name, { max: 80, required: true, name: 'Tên' });
@@ -125,7 +129,7 @@ route('POST', '/public/online-orders', 'public', async ({ env, request, body }) 
     .first();
   if (recent.n >= ONLINE_ORDERS_PER_HOUR) throw new HttpError(429, 'Bạn đã đặt nhiều đơn liên tiếp, vui lòng gọi điện cho quán');
 
-  const token = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const token = newAccessToken();
   const res = await env.DB.prepare(
     `INSERT INTO orders (table_number, order_type, customer_name, customer_phone, customer_address, access_token, status)
      VALUES (0, 'online', ?, ?, ?, ?, 'open')`
@@ -138,29 +142,24 @@ route('POST', '/public/online-orders', 'public', async ({ env, request, body }) 
 });
 
 route('GET', '/public/online-orders/:id', 'public', async ({ env, params, url }) => {
-  const o = await findOnlineOrder(env, params.id, url.searchParams.get('token'));
+  const o = await findOwnedOrder(env, params.id, url.searchParams.get('token'), 'online');
   return { order: (await attachItems(env, [o]))[0] };
 });
 
-// Khách sửa đơn: đổi số lượng hoặc bỏ món (quantity = 0) - chỉ với món bếp chưa làm ("Đang chờ")
-// Đơn tại bàn: gửi { table }; đơn online: gửi { order_id, token }
+// Khách sửa đơn của mình: đổi số lượng hoặc bỏ món (quantity = 0) - chỉ với món bếp chưa làm ("Đang chờ").
+// Gửi { order_id, token } của đơn (tại bàn hoặc online).
 route('PATCH', '/public/order-items/:id', 'public', async ({ env, params, body }) => {
-  const online = Boolean(body.token);
-  if (online) await requireOnlineOrdering(env);
-  else await requireCustomerOrdering(env);
   const quantity = int(body.quantity, { min: 0, max: 50, name: 'Số lượng' });
   const item = await env.DB.prepare(
-    `SELECT i.id, i.status, i.order_id, o.table_number, o.order_type, o.access_token, o.status AS order_status,
+    `SELECT i.id, i.status, i.order_id, o.order_type, o.access_token, o.status AS order_status,
        EXISTS (SELECT 1 FROM vouchers v WHERE v.order_item_id = i.id) AS is_gift
      FROM order_items i JOIN orders o ON o.id = i.order_id WHERE i.id = ?`
   )
     .bind(params.id)
     .first();
-  const owns = !item
-    ? false
-    : online
-      ? item.order_type === 'online' && item.order_id === Number(body.order_id) && safeEqual(String(body.token), item.access_token || '')
-      : item.order_type === 'table' && item.table_number === int(body.table, { min: 1, name: 'Số bàn' });
+  if (item?.order_type === 'online') await requireOnlineOrdering(env);
+  else await requireCustomerOrdering(env);
+  const owns = !!item && item.order_id === Number(body.order_id) && !!body.token && safeEqual(String(body.token), item.access_token || '');
   if (!owns || item.order_status !== 'open') throw new HttpError(404, 'Không tìm thấy món trong đơn của bạn');
   if (item.is_gift) throw new HttpError(409, 'Không sửa được ly nước tặng, vui lòng báo nhân viên');
   if (item.status !== 'pending') throw new HttpError(409, 'Bếp đã bắt đầu làm món này, vui lòng báo nhân viên nếu cần đổi');
@@ -191,17 +190,20 @@ route('POST', '/public/feedback', 'public', async ({ env, body }) => {
   let reason = null;
   let order = null;
   if (body.order_id && body.token) {
-    // Khách đặt online: đơn đang giao hoặc đã thanh toán đều được nhận quà
-    const o = await findOnlineOrder(env, body.order_id, body.token).catch(() => null);
-    if (o && o.status !== 'cancelled') order = o;
+    // Đơn của chính khách (tại bàn hoặc online): đang mở hoặc đã thanh toán đều được nhận quà
+    const o = await env.DB.prepare('SELECT id, access_token, status FROM orders WHERE id = ?').bind(int(body.order_id, { min: 1 })).first();
+    if (o && o.status !== 'cancelled' && safeEqual(String(body.token), o.access_token || '')) order = o;
   } else if (table) {
-    order = await env.DB.prepare("SELECT id FROM orders WHERE table_number = ? AND status = 'open' AND order_type = 'table'")
+    // Khách gọi món qua nhân viên (không có đơn trên máy): lấy đơn mở gần nhất của bàn
+    order = await env.DB.prepare(
+      "SELECT id FROM orders WHERE table_number = ? AND status = 'open' AND order_type = 'table' ORDER BY id DESC LIMIT 1"
+    )
       .bind(table)
       .first();
   }
   if (!table && !body.order_id) reason = 'Quét mã QR tại bàn hoặc đặt online để nhận quà tặng';
   else if (!content || content.length < 5) reason = 'Hãy viết vài dòng góp ý để nhận quà tặng';
-  else if (!order) reason = body.order_id ? 'Quà tặng dành cho khách đã đặt đơn online' : 'Quà tặng dành cho khách đang dùng bữa tại bàn';
+  else if (!order) reason = 'Quà tặng dành cho khách đã đặt món';
   else {
     const { n } = await env.DB.prepare('SELECT COUNT(*) AS n FROM vouchers WHERE source_order_id = ?').bind(order.id).first();
     if (n >= (Number(s.vouchers_per_order) || 1)) reason = 'Bạn đã nhận quà tặng cho đơn này';
@@ -287,6 +289,8 @@ route('GET', '/admin/summary', 'admin', async ({ env }) => {
   const row = await env.DB.prepare(
     `SELECT
        (SELECT COUNT(*) FROM orders WHERE status = 'open') AS open_orders,
+       (SELECT COUNT(*) FROM orders WHERE status = 'open' AND order_type = 'table') AS open_table_orders,
+       (SELECT COUNT(*) FROM orders WHERE status = 'open' AND order_type = 'online') AS open_online_orders,
        (SELECT COUNT(*) FROM order_items i JOIN orders o ON o.id = i.order_id
           WHERE o.status = 'open' AND i.status IN ('pending','cooking')) AS waiting_items,
        (SELECT COUNT(*) FROM feedback WHERE is_read = 0) AS unread_feedback,
@@ -321,22 +325,37 @@ function nextMonth(month) {
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
 }
 
+// Danh sách đơn: đơn đặt trước hiện trước (sắp xếp theo giờ tạo tăng dần).
+// type = table (đang phục vụ tại quán) | online (đơn online) | bỏ trống = tất cả
 route('GET', '/admin/orders', 'admin', async ({ env, url }) => {
   const status = oneOf(url.searchParams.get('status') || 'open', ['open', 'paid', 'cancelled'], 'Trạng thái');
-  let stmt;
-  if (status === 'open') {
-    stmt = env.DB.prepare("SELECT * FROM orders WHERE status = 'open' ORDER BY created_at");
-  } else {
-    const date = dateStr(url.searchParams.get('date') || vnToday());
-    stmt = env.DB.prepare(
-      `SELECT * FROM orders WHERE status = ? AND date(COALESCE(paid_at, updated_at), '+7 hours') = ? ORDER BY id DESC`
-    ).bind(status, date);
+  const type = url.searchParams.get('type') ? oneOf(url.searchParams.get('type'), ['table', 'online'], 'Loại đơn') : null;
+  const where = ['status = ?'];
+  const binds = [status];
+  if (type) {
+    where.push('order_type = ?');
+    binds.push(type);
   }
-  const { results } = await stmt.all();
+  if (status !== 'open') {
+    where.push("date(COALESCE(paid_at, updated_at), '+7 hours') = ?");
+    binds.push(dateStr(url.searchParams.get('date') || vnToday()));
+  }
+  const { results } = await env.DB.prepare(`SELECT * FROM orders WHERE ${where.join(' AND ')} ORDER BY created_at, id`)
+    .bind(...binds)
+    .all();
   return { orders: await attachItems(env, results) };
 });
 
-route('POST', '/admin/orders', 'admin', async ({ env, body }) => ({ order: await addItemsToTable(env, body) }));
+// Nhân viên gọi món: có order_id -> thêm vào đơn đó (vd. Bàn 1-2); không có -> tạo lượt khách mới cho bàn
+route('POST', '/admin/orders', 'admin', async ({ env, body }) => {
+  const prepared = await prepareItems(env, body);
+  if (body.order_id) {
+    const o = await requireOpenOrder(env, int(body.order_id, { min: 1, name: 'Đơn' }));
+    return { order: await insertItems(env, o, prepared) };
+  }
+  const { order } = await createTableOrder(env, int(body.table, { min: 1, max: 100000, name: 'Số bàn' }), prepared);
+  return { order };
+});
 
 route('GET', '/admin/orders/:id', 'admin', async ({ env, params }) => ({ order: await getOrder(env, params.id) }));
 
@@ -453,9 +472,9 @@ route('POST', '/admin/orders/:id/voucher', 'admin', async ({ env, params, body }
 // =============================================================
 route('GET', '/admin/tables', 'admin', async ({ env }) => {
   const { results } = await env.DB.prepare(
-    `SELECT t.*, o.id AS open_order_id FROM tables t
-       LEFT JOIN orders o ON o.table_number = t.number AND o.status = 'open'
-       ORDER BY t.number`
+    `SELECT t.*,
+       (SELECT COUNT(*) FROM orders o WHERE o.table_number = t.number AND o.status = 'open' AND o.order_type = 'table') AS open_orders
+     FROM tables t ORDER BY t.number`
   ).all();
   return { tables: results };
 });

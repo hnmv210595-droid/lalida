@@ -61,6 +61,7 @@ CREATE TABLE orders (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   table_id       INTEGER REFERENCES tables(id) ON DELETE SET NULL,
   table_number   INTEGER NOT NULL,                 -- đơn online: 0
+  guest_no       INTEGER,                          -- đơn tại bàn: lượt khách trong bàn -> "Bàn 1-2"
   order_type     TEXT NOT NULL DEFAULT 'table' CHECK (order_type IN ('table','online')),
   customer_name    TEXT,                           -- đơn online: thông tin giao hàng
   customer_phone   TEXT,
@@ -80,8 +81,9 @@ CREATE TABLE orders (
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_table ON orders(table_number, status);
 CREATE INDEX idx_orders_paid_at ON orders(paid_at);
--- Đảm bảo mỗi bàn chỉ có 1 đơn đang mở (chống tạo trùng khi 2 máy cùng gửi)
-CREATE UNIQUE INDEX ux_orders_open_table ON orders(table_number) WHERE status = 'open' AND order_type = 'table';
+-- Một bàn có thể có nhiều đơn mở (mỗi lượt quét QR một đơn: Bàn 1-1, 1-2...);
+-- chỉ mục duy nhất chống trùng số thứ tự khi 2 máy cùng gửi
+CREATE UNIQUE INDEX ux_orders_open_guest ON orders(table_number, guest_no) WHERE status = 'open' AND order_type = 'table';
 
 -- Trạng thái món: pending (Đang chờ) -> cooking (Đang làm) -> served (Đã lên món)
 CREATE TABLE order_items (

@@ -1,6 +1,6 @@
 // In hoá đơn: (1) trình duyệt window.print() khổ 58/80mm, (2) máy in nhiệt Bluetooth (ESC/POS qua Web Bluetooth)
 window.LLPrint = (() => {
-  const { money, esc, vnDateTime } = window.LL;
+  const { money, esc, vnDateTime, orderLabel } = window.LL;
   const PAY_LABEL = { cash: 'Tiền mặt', transfer: 'Chuyển khoản', card: 'Thẻ' };
 
   function activeItems(order) {
@@ -29,7 +29,7 @@ window.LLPrint = (() => {
           ? `<div>Số HĐ: #${order.id} &nbsp; ĐƠN ONLINE</div>
              <div>Khách: ${esc(order.customer_name)} - ${esc(order.customer_phone)}</div>
              <div>Giao đến: ${esc(order.customer_address)}</div>`
-          : `<div>Số HĐ: #${order.id} &nbsp; Bàn: ${order.table_number}</div>`
+          : `<div>Số HĐ: #${order.id} &nbsp; ${orderLabel(order)}</div>`
       }
       <div>Giờ vào: ${vnDateTime(order.created_at)}</div>
       ${order.paid_at ? `<div>Thanh toán: ${vnDateTime(order.paid_at)}</div>` : '<div><i>(Phiếu tạm tính)</i></div>'}
@@ -140,7 +140,7 @@ window.LLPrint = (() => {
       text(`Khach: ${order.customer_name} - ${order.customer_phone}`);
       text(`Giao den: ${order.customer_address}`);
     } else {
-      text(`So HD: #${order.id}   Ban: ${order.table_number}`);
+      text(`So HD: #${order.id}   ${orderLabel(order)}`);
     }
     text('Gio vao: ' + vnDateTime(order.created_at));
     text(order.paid_at ? 'Thanh toan: ' + vnDateTime(order.paid_at) : '(Phieu tam tinh)');
