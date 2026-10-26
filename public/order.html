@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com/3.4.16"></script>
-  <script src="/assets/tailwind-config.js?v=20261025b"></script>
+  <script src="/assets/tailwind-config.js?v=20261026a"></script>
   <style>
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { scrollbar-width: none; }
@@ -42,7 +42,7 @@
 
   <!-- TRANG CHÍNH sau khi quét QR: Menu, bên dưới là Góp ý & Phản hồi -->
   <section id="home-view" class="max-w-md mx-auto px-4 py-6 space-y-4">
-    <p class="text-center text-brand-800 font-semibold">Chào mừng quý khách đến với LaLiDa! 🍗</p>
+    <p id="welcome" class="text-center text-brand-800 font-semibold">Chào mừng quý khách đến với LaLiDa! 🍗</p>
     <a href="#menu" class="block rounded-3xl bg-brand-700 hover:bg-brand-800 text-white p-6 shadow-lg text-center transition">
       <div class="text-5xl">🍽️</div>
       <div class="text-2xl font-bold mt-2">Menu</div>
@@ -146,8 +146,35 @@
     <button id="open-cart" class="flex-[1.4] rounded-xl bg-clay-500 text-white font-semibold py-3 text-sm">🛒 <span id="bar-count">0</span> món · <span id="bar-total">0đ</span></button>
   </div>
 
-  <script src="/assets/common.js?v=20261025b"></script>
-  <script src="/assets/order.js?v=20261025b"></script>
+  <!-- ĐẶT ONLINE: form thông tin giao hàng, hiện khi bấm "Đặt đơn" ở lalida.net/online -->
+  <div id="online-modal" class="hidden fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center">
+    <form id="online-form" class="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3 max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-brand-800">🛵 Thông tin đặt hàng</h2>
+        <button type="button" id="online-cancel" class="text-2xl text-stone-400" aria-label="Đóng">×</button>
+      </div>
+      <div>
+        <label for="ol-name" class="block text-sm font-medium mb-1">Tên *</label>
+        <input id="ol-name" name="customer_name" required maxlength="80" autocomplete="name" class="w-full rounded-lg border border-stone-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+      </div>
+      <div>
+        <label for="ol-phone" class="block text-sm font-medium mb-1">Số điện thoại *</label>
+        <input id="ol-phone" name="customer_phone" required type="tel" inputmode="tel" maxlength="15" autocomplete="tel" pattern="[0-9 +.\-]{9,15}" placeholder="09xx xxx xxx" class="w-full rounded-lg border border-stone-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+      </div>
+      <div>
+        <label for="ol-address" class="block text-sm font-medium mb-1">Địa chỉ *</label>
+        <textarea id="ol-address" name="customer_address" required rows="2" maxlength="300" autocomplete="street-address" placeholder="Số nhà, đường, phường/xã…" class="w-full rounded-lg border border-stone-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+      </div>
+      <div class="rounded-xl bg-cream-100 p-3 text-sm">
+        <div id="ol-summary"></div>
+      </div>
+      <button class="w-full rounded-xl bg-clay-500 hover:bg-clay-600 disabled:bg-stone-300 text-white font-semibold py-3">Xác nhận đặt đơn</button>
+      <p class="text-xs text-stone-500 text-center">Quán sẽ gọi lại để xác nhận đơn. Thanh toán khi nhận hàng.</p>
+    </form>
+  </div>
+
+  <script src="/assets/common.js?v=20261026a"></script>
+  <script src="/assets/order.js?v=20261026a"></script>
   <!-- Dự phòng: nếu trình duyệt không chạy được order.js (quá cũ / lỗi tải) thì báo cho khách thay vì để trang trống -->
   <script>
     window.addEventListener('load', function () {

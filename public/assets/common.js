@@ -80,5 +80,8 @@ window.LL = (() => {
 
   const CATEGORY_ICON = { com: '🍚', 'do-an': '🍗', canh: '🍲', 'do-uong': '🥤', 'goi-them': '➕' };
 
-  return { api, money, esc, vnDateTime, vnToday, toast, storage, STATUS, CATEGORY_ICON };
+  // Tên hiển thị của đơn: "Bàn 3" hoặc "Đơn online"
+  const orderLabel = (o) => (o.order_type === 'online' ? 'Đơn online' : `Bàn ${o.table_number}`);
+
+  return { api, money, esc, vnDateTime, vnToday, toast, storage, STATUS, CATEGORY_ICON, orderLabel };
 })();

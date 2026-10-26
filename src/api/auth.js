@@ -23,7 +23,7 @@ function fromB64url(s) {
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
 
-function safeEqual(a, b) {
+export function safeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const x = enc.encode(a);
   const y = enc.encode(b);

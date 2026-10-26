@@ -11,6 +11,7 @@ INSERT INTO settings (key, value) VALUES
   ('paper_width',    '80'),
   ('bill_footer',    'Cảm ơn quý khách - Hẹn gặp lại!'),
   ('customer_ordering',       '1'),  -- 1: khách quét QR tự đặt món; 0: chỉ xem thực đơn & góp ý
+  ('online_ordering',         '1'),  -- trang Đặt online (lalida.net/online)
   ('feedback_reward_enabled', '1'),  -- tặng 1 ly nước cho lần sau khi góp ý
   ('vouchers_per_order',      '1'),
   ('voucher_valid_days',      '30'),

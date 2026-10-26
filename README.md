@@ -41,6 +41,12 @@ lalida/
 - Bấm **Menu** mới hiện danh sách món theo tab `Cơm`, `Đồ Ăn`, `Canh`, `Đồ Uống`, `Gọi Thêm` → chọn món → **Đặt đơn**.
 - Panel **Đơn đã đặt**: trạng thái từng món (*Đang chờ → Đang làm → Đã lên món*), tạm tính + VAT, tự cập nhật mỗi 5 giây. Khách **sửa đơn**: đổi số lượng hoặc bỏ món còn "Đang chờ" (bếp chưa làm); gọi thêm thì chọn món rồi bấm Đặt đơn (cộng vào cùng đơn).
 - **Góp ý nhận quà**: khách đang dùng bữa (bàn có đơn đang mở) viết góp ý sẽ nhận mã `LLD-XXXXXX` tặng 1 ly nước cho **lần ăn sau** (mã hiện trên điện thoại khách, có hạn dùng; mặc định 1 mã/lượt ăn của bàn, 30 ngày).
+**Đặt online** (`lalida.net/online`, trang chủ `lalida.net` cũng chuyển về đây)
+- Giống trang quét QR: trang chính có **Menu** và **Góp ý & Phản hồi**; khách chọn món rồi bấm **Đặt đơn** → hiện form **Tên, SĐT, Địa chỉ** → Xác nhận đặt đơn. Thông tin được nhớ cho lần đặt sau.
+- Khách xem trạng thái, sửa món còn "Đang chờ", gọi thêm vào đơn đang giao; đơn đã thanh toán thì lần sau tạo đơn mới. Góp ý sau khi đặt online cũng được tặng mã 1 ly nước.
+- Trang Admin hiện đơn **🛵 Đơn online** kèm tên, SĐT (bấm để gọi), địa chỉ; hoá đơn in kèm thông tin giao hàng. Mã QR đặt online in ở mục **Bàn & QR**. Bật/tắt nhận đơn online trong Cài đặt. Chống spam: tối đa 5 đơn mới/giờ/IP.
+- Nâng cấp database đã có dữ liệu: `npx wrangler d1 execute lalida-db --remote --file=./migrations/0003_online_orders.sql`
+
 - Có thể tắt khách tự đặt món trong Cài đặt → "Cho phép khách tự gọi món qua QR" (khi đó khách chỉ xem Menu và Góp ý, nhân viên gọi món cho bàn).
 
 **Quản trị** (`/admin`)

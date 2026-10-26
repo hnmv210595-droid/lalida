@@ -33,7 +33,8 @@ export async function attachItems(env, orders) {
   return orders.map((o) => {
     const items = results.filter((i) => i.order_id === o.id);
     const totals = o.status === 'open' ? computeTotals(items, percent) : {};
-    return { ...o, ...totals, items };
+    const { access_token, ...rest } = o; // không bao giờ trả mã truy cập đơn online ra ngoài
+    return { ...rest, ...totals, items };
   });
 }
 
@@ -75,12 +76,8 @@ export function calcPay(staff, { month, workedDays, hours, allowance, paidLeaveL
   };
 }
 
-// Thêm món vào đơn đang mở của bàn (tạo đơn mới nếu chưa có). Giá lấy từ DB, không tin client.
-export async function addItemsToTable(env, body) {
-  const tableNumber = int(body.table, { min: 1, max: 100000, name: 'Số bàn' });
-  const table = await env.DB.prepare('SELECT * FROM tables WHERE number = ? AND is_active = 1').bind(tableNumber).first();
-  if (!table) throw new HttpError(404, `Bàn ${tableNumber} không tồn tại`);
-
+// Kiểm tra danh sách món khách gửi; giá lấy từ DB, không tin client. Món hết hàng bị từ chối.
+export async function prepareItems(env, body) {
   if (!Array.isArray(body.items) || body.items.length === 0) throw new HttpError(400, 'Vui lòng chọn ít nhất 1 món');
   if (body.items.length > 50) throw new HttpError(400, 'Quá nhiều món trong 1 lần gọi');
   const lines = body.items.map((it) => ({
@@ -97,22 +94,34 @@ export async function addItemsToTable(env, body) {
     .all();
   const byId = new Map(menu.map((m) => [m.id, m]));
   for (const l of lines) if (!byId.has(l.id)) throw new HttpError(409, 'Có món đã bán hết, vui lòng kiểm tra lại giỏ hàng');
+  return { lines: lines.map((l) => ({ ...l, menu: byId.get(l.id) })), note };
+}
 
-  // Chỉ mục duy nhất ux_orders_open_table đảm bảo không tạo trùng đơn mở
-  await env.DB.prepare('INSERT OR IGNORE INTO orders (table_id, table_number, status) VALUES (?, ?, ?)')
-    .bind(table.id, table.number, 'open')
-    .run();
-  const order = await env.DB.prepare("SELECT id, note FROM orders WHERE table_number = ? AND status = 'open'")
-    .bind(table.number)
-    .first();
-
-  const stmts = lines.map((l) => {
-    const m = byId.get(l.id);
-    return env.DB.prepare('INSERT INTO order_items (order_id, menu_item_id, name, price, quantity, note) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(order.id, m.id, m.name, m.price, l.quantity, l.note);
-  });
-  const mergedNote = note ? [order.note, note].filter(Boolean).join(' | ').slice(0, 1000) : order.note;
-  stmts.push(env.DB.prepare("UPDATE orders SET note = ?, updated_at = datetime('now') WHERE id = ?").bind(mergedNote, order.id));
+// Ghi các món đã kiểm tra vào đơn, nối thêm ghi chú
+export async function insertItems(env, order, prepared) {
+  const stmts = prepared.lines.map((l) =>
+    env.DB.prepare('INSERT INTO order_items (order_id, menu_item_id, name, price, quantity, note) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(order.id, l.menu.id, l.menu.name, l.menu.price, l.quantity, l.note)
+  );
+  const note = prepared.note ? [order.note, prepared.note].filter(Boolean).join(' | ').slice(0, 1000) : order.note;
+  stmts.push(env.DB.prepare("UPDATE orders SET note = ?, updated_at = datetime('now') WHERE id = ?").bind(note ?? null, order.id));
   await env.DB.batch(stmts);
   return getOrder(env, order.id);
+}
+
+// Thêm món vào đơn đang mở của bàn (tạo đơn mới nếu chưa có)
+export async function addItemsToTable(env, body) {
+  const tableNumber = int(body.table, { min: 1, max: 100000, name: 'Số bàn' });
+  const table = await env.DB.prepare('SELECT * FROM tables WHERE number = ? AND is_active = 1').bind(tableNumber).first();
+  if (!table) throw new HttpError(404, `Bàn ${tableNumber} không tồn tại`);
+  const prepared = await prepareItems(env, body);
+
+  // Chỉ mục duy nhất ux_orders_open_table đảm bảo không tạo trùng đơn mở
+  await env.DB.prepare("INSERT OR IGNORE INTO orders (table_id, table_number, status, order_type) VALUES (?, ?, 'open', 'table')")
+    .bind(table.id, table.number)
+    .run();
+  const order = await env.DB.prepare("SELECT id, note FROM orders WHERE table_number = ? AND status = 'open' AND order_type = 'table'")
+    .bind(table.number)
+    .first();
+  return insertItems(env, order, prepared);
 }

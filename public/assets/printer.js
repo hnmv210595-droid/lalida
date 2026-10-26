@@ -24,7 +24,13 @@ window.LLPrint = (() => {
       <div class="c">ĐT: ${esc(s.shop_phone || '')}</div>
       <hr />
       <div class="c b">HOÁ ĐƠN BÁN HÀNG</div>
-      <div>Số HĐ: #${order.id} &nbsp; Bàn: ${order.table_number}</div>
+      ${
+        order.order_type === 'online'
+          ? `<div>Số HĐ: #${order.id} &nbsp; ĐƠN ONLINE</div>
+             <div>Khách: ${esc(order.customer_name)} - ${esc(order.customer_phone)}</div>
+             <div>Giao đến: ${esc(order.customer_address)}</div>`
+          : `<div>Số HĐ: #${order.id} &nbsp; Bàn: ${order.table_number}</div>`
+      }
       <div>Giờ vào: ${vnDateTime(order.created_at)}</div>
       ${order.paid_at ? `<div>Thanh toán: ${vnDateTime(order.paid_at)}</div>` : '<div><i>(Phiếu tạm tính)</i></div>'}
       <hr />
@@ -129,7 +135,13 @@ window.LLPrint = (() => {
     text('HOA DON BAN HANG');
     cmd(0x1b, 0x45, 0);
     cmd(0x1b, 0x61, 0); // căn trái
-    text(`So HD: #${order.id}   Ban: ${order.table_number}`);
+    if (order.order_type === 'online') {
+      text(`So HD: #${order.id}   DON ONLINE`);
+      text(`Khach: ${order.customer_name} - ${order.customer_phone}`);
+      text(`Giao den: ${order.customer_address}`);
+    } else {
+      text(`So HD: #${order.id}   Ban: ${order.table_number}`);
+    }
     text('Gio vao: ' + vnDateTime(order.created_at));
     text(order.paid_at ? 'Thanh toan: ' + vnDateTime(order.paid_at) : '(Phieu tam tinh)');
     line();

@@ -3,10 +3,14 @@
   const { api, money, esc, toast, storage, STATUS, CATEGORY_ICON } = window.LL;
   const $ = (id) => document.getElementById(id);
 
+  // Hai chế độ dùng chung trang này: gọi món tại bàn (/order?table=X) và Đặt online (/online)
+  const ONLINE = /^\/online\/?$/.test(location.pathname);
   const tableParam = new URLSearchParams(location.search).get('table');
-  const tableNumber = /^\d+$/.test(tableParam || '') ? Number(tableParam) : null;
-  const CART_KEY = `lalida_cart_${tableNumber || 0}`;
+  const tableNumber = !ONLINE && /^\d+$/.test(tableParam || '') ? Number(tableParam) : null;
+  const CART_KEY = ONLINE ? 'lalida_cart_online' : `lalida_cart_${tableNumber || 0}`;
   const VOUCHER_KEY = 'lalida_vouchers';
+  const ONLINE_ORDER_KEY = 'lalida_online_order'; // { id, token } của đơn online gần nhất
+  const CUSTOMER_KEY = 'lalida_customer'; // nhớ Tên / SĐT / Địa chỉ cho lần đặt sau
 
   const state = {
     categories: [],
@@ -20,10 +24,26 @@
     rating: 5,
     ordering: false, // khách tự gọi món (bật/tắt trong Cài đặt Admin)
     vouchers: storage.get(VOUCHER_KEY, []), // mã tặng nước đã nhận trên máy này
+    online: storage.get(ONLINE_ORDER_KEY, null),
   };
 
-  // ---------- Bàn ----------
+  // Tham số nhận diện đơn của khách khi gọi API: bàn hoặc đơn online
+  const owner = () => (ONLINE ? { order_id: state.online?.id, token: state.online?.token } : { table: tableNumber });
+
+  // ---------- Bàn / Đặt online ----------
   async function initTable() {
+    if (ONLINE) {
+      state.tableOk = true;
+      $('table-badge').innerHTML = '🛵 Đặt online';
+      $('welcome').textContent = 'Đặt món online - LaLiDa giao tận nơi! 🛵';
+      document.title = 'LaLiDa - Đặt online';
+      renderCart();
+      if (state.ordering) {
+        loadOrder();
+        setInterval(loadOrder, 10000);
+      }
+      return;
+    }
     if (!tableNumber) {
       $('table-badge').textContent = 'Chưa chọn bàn';
       $('table-badge').classList.replace('bg-brand-700', 'bg-stone-500');
@@ -79,11 +99,14 @@
 
   // Khách tự gọi món (bật/tắt trong Cài đặt Admin); tắt thì chỉ xem thực đơn & góp ý
   function applyMode() {
-    state.ordering = state.settings.customer_ordering === '1';
+    state.ordering = ONLINE ? state.settings.online_ordering === '1' : state.settings.customer_ordering === '1';
     const reward = state.settings.feedback_reward_enabled === '1';
     document.querySelectorAll('.reward-hint').forEach((el) => el.classList.toggle('hidden', !reward));
     $('reward-banner').classList.toggle('hidden', !reward);
-    if (!state.ordering) {
+    if (ONLINE && !state.ordering) {
+      $('ordering-note').querySelector('div').innerHTML = '🙏 Quán tạm ngừng nhận đơn online. Vui lòng gọi điện cho quán để đặt món.';
+    }
+    if (!state.ordering && !ONLINE) {
       state.cart = {};
       $('no-table').querySelector('div').innerHTML = '📱 Vui lòng <b>quét mã QR trên bàn</b> để gửi góp ý nhận quà.';
     }
@@ -213,21 +236,46 @@
     btn.textContent = state.tableOk ? 'Đặt đơn' : 'Quét QR tại bàn để gọi món';
   }
 
-  async function submitOrder() {
+  // Đặt online: đơn trước còn mở thì gọi thêm vào đơn đó, chưa có thì hiện form Tên / SĐT / Địa chỉ
+  function submitClick() {
+    if (!cartLines().length || !state.tableOk) return;
+    if (ONLINE && !(state.online && state.order?.status === 'open')) return openOnlineForm();
+    submitOrder().catch(() => {});
+  }
+
+  function openOnlineForm() {
+    const c = storage.get(CUSTOMER_KEY, {});
+    $('ol-name').value = c.customer_name || '';
+    $('ol-phone').value = c.customer_phone || '';
+    $('ol-address').value = c.customer_address || '';
+    const lines = cartLines();
+    $('ol-summary').innerHTML =
+      lines.map((l) => `<div class="flex justify-between"><span>${l.qty} × ${esc(l.item.name)}</span><span>${money(l.item.price * l.qty)}</span></div>`).join('') +
+      `<div class="flex justify-between font-bold border-t border-cream-200 mt-1 pt-1"><span>Cộng</span><span>${money(lines.reduce((s, l) => s + l.item.price * l.qty, 0))}</span></div>`;
+    $('online-modal').classList.remove('hidden');
+    (c.customer_name ? $('ol-address') : $('ol-name')).focus();
+  }
+
+  async function submitOrder(customer = null) {
     const lines = cartLines();
     if (!lines.length || !state.tableOk) return;
     const btn = $('submit-order');
     btn.disabled = true;
     btn.textContent = 'Đang gửi…';
     try {
-      const { order } = await api('/public/orders', {
-        method: 'POST',
-        body: {
-          table: tableNumber,
-          note: $('order-note').value,
-          items: lines.map((l) => ({ id: l.item.id, quantity: l.qty, note: l.note })),
-        },
-      });
+      const body = {
+        note: $('order-note').value,
+        items: lines.map((l) => ({ id: l.item.id, quantity: l.qty, note: l.note })),
+      };
+      let order;
+      if (ONLINE) {
+        const res = await api('/public/online-orders', { method: 'POST', body: { ...body, ...(customer || owner()) } });
+        order = res.order;
+        state.online = { id: order.id, token: res.token };
+        storage.set(ONLINE_ORDER_KEY, state.online);
+      } else {
+        ({ order } = await api('/public/orders', { method: 'POST', body: { ...body, table: tableNumber } }));
+      }
       state.cart = {};
       storage.set(CART_KEY, state.cart);
       $('order-note').value = '';
@@ -240,24 +288,59 @@
     } catch (e) {
       toast(e.message, 'error');
       if (e.status === 409) loadMenu(true);
+      throw e;
     } finally {
       renderCart();
+    }
+  }
+
+  async function submitOnlineForm(e) {
+    e.preventDefault();
+    const form = e.target;
+    const customer = {
+      customer_name: $('ol-name').value.trim(),
+      customer_phone: $('ol-phone').value.trim(),
+      customer_address: $('ol-address').value.trim(),
+    };
+    const btn = form.querySelector('button:not([type=button])');
+    btn.disabled = true;
+    try {
+      await submitOrder(customer);
+      storage.set(CUSTOMER_KEY, customer);
+      $('online-modal').classList.add('hidden');
+    } catch {
+      /* lỗi đã được báo bằng toast, giữ form để khách sửa */
+    } finally {
+      btn.disabled = false;
     }
   }
 
   // ---------- Đơn đã đặt ----------
   async function loadOrder() {
     try {
-      const { order } = await api(`/public/orders?table=${tableNumber}`);
-      state.order = order;
+      if (ONLINE) {
+        if (!state.online) return renderOrder();
+        const { order } = await api(`/public/online-orders/${state.online.id}?token=${encodeURIComponent(state.online.token)}`);
+        state.order = order;
+      } else {
+        const { order } = await api(`/public/orders?table=${tableNumber}`);
+        state.order = order;
+      }
       renderOrder();
-    } catch {
-      /* thử lại ở lần cập nhật sau */
+    } catch (e) {
+      if (ONLINE && e.status === 404) {
+        // Đơn không còn (bị xoá) -> quên đơn cũ, lần sau đặt đơn mới
+        state.online = null;
+        state.order = null;
+        storage.set(ONLINE_ORDER_KEY, null);
+        renderOrder();
+      }
     }
   }
 
   function renderOrder() {
     const o = state.order;
+    if (o && o.status !== 'open') return renderClosedOrder(o);
     const active = o ? o.items.filter((i) => i.status !== 'cancelled') : [];
     $('home-order').classList.toggle('hidden', !active.length);
     $('home-order-count').textContent = active.length ? `(${active.reduce((s, i) => s + i.quantity, 0)} món)` : '';
@@ -290,6 +373,7 @@
       })
       .join('');
     $('order-body').innerHTML = `
+      ${ONLINE ? customerBlock(o) : ''}
       <div class="text-xs text-stone-400 mb-1">Đơn #${o.id} · Món "Đang chờ" có thể sửa số lượng hoặc bỏ. Muốn gọi thêm, chọn món ở Menu rồi bấm Đặt đơn.</div>
       <div class="divide-y divide-stone-100">${rows}</div>
       <div class="border-t border-stone-200 mt-2 pt-2 space-y-1 text-stone-700">
@@ -297,7 +381,30 @@
         ${o.vat_percent ? `<div class="flex justify-between"><span>VAT (${o.vat_percent}%)</span><span>${money(o.vat_amount)}</span></div>` : ''}
         <div class="flex justify-between font-bold text-brand-800 text-base"><span>Tổng tạm tính</span><span>${money(o.total)}</span></div>
       </div>
-      <p class="text-xs text-stone-400 mt-2">Vui lòng thanh toán tại quầy thu ngân khi dùng bữa xong.</p>`;
+      <p class="text-xs text-stone-400 mt-2">${
+        ONLINE ? 'Quán sẽ gọi điện xác nhận và giao hàng. Thanh toán khi nhận hàng.' : 'Vui lòng thanh toán tại quầy thu ngân khi dùng bữa xong.'
+      }</p>`;
+  }
+
+  function customerBlock(o) {
+    return `<div class="rounded-xl bg-cream-100 px-3 py-2 mb-2 text-xs text-stone-700">
+      🛵 Giao đến: <b>${esc(o.customer_name)}</b> · ${esc(o.customer_phone)}<br />${esc(o.customer_address)}</div>`;
+  }
+
+  // Đơn online đã thanh toán / đã huỷ: chỉ xem, lần đặt sau sẽ tạo đơn mới
+  function renderClosedOrder(o) {
+    $('home-order').classList.add('hidden');
+    const paid = o.status === 'paid';
+    $('order-body').innerHTML = `
+      <div class="rounded-xl px-3 py-2 mb-2 text-sm font-semibold ${paid ? 'bg-emerald-50 text-emerald-800' : 'bg-stone-100 text-stone-600'}">
+        ${paid ? '✅ Đơn #' + o.id + ' đã hoàn tất. Cảm ơn bạn đã đặt món tại LaLiDa!' : '❌ Đơn #' + o.id + ' đã bị huỷ.'}
+      </div>
+      <div class="text-sm text-stone-600">${o.items
+        .filter((i) => i.status !== 'cancelled')
+        .map((i) => `${i.quantity} × ${esc(i.name)}`)
+        .join('<br />')}</div>
+      ${paid ? `<div class="font-bold text-brand-800 mt-2">Tổng: ${money(o.total)}</div>` : ''}
+      <p class="text-xs text-stone-400 mt-2">Chọn món ở Menu rồi bấm Đặt đơn để đặt đơn mới.</p>`;
   }
 
   async function editOrderItem(btn) {
@@ -305,7 +412,7 @@
     if (quantity === 0 && !confirm('Bỏ món này khỏi đơn?')) return;
     btn.disabled = true;
     try {
-      const { order } = await api(`/public/order-items/${btn.dataset.oi}`, { method: 'PATCH', body: { table: tableNumber, quantity } });
+      const { order } = await api(`/public/order-items/${btn.dataset.oi}`, { method: 'PATCH', body: { ...owner(), quantity } });
       state.order = order;
       renderOrder();
       toast(quantity === 0 ? 'Đã bỏ món khỏi đơn' : 'Đã cập nhật số lượng');
@@ -329,7 +436,12 @@
     try {
       const res = await api('/public/feedback', {
         method: 'POST',
-        body: { rating: state.rating, content: $('fb-content').value, customer_name: $('fb-name').value, table: tableNumber },
+        body: {
+          rating: state.rating,
+          content: $('fb-content').value,
+          customer_name: $('fb-name').value,
+          ...(ONLINE ? (state.online ? owner() : {}) : { table: tableNumber }),
+        },
       });
       e.target.reset();
       state.rating = 5;
@@ -404,7 +516,9 @@
       storage.set(CART_KEY, state.cart);
     }
   });
-  $('submit-order').addEventListener('click', submitOrder);
+  $('submit-order').addEventListener('click', submitClick);
+  $('online-form').addEventListener('submit', submitOnlineForm);
+  $('online-cancel').addEventListener('click', () => $('online-modal').classList.add('hidden'));
   $('feedback-form').addEventListener('submit', submitFeedback);
   $('open-cart').addEventListener('click', () => openSheet('cart-card'));
   $('open-order').addEventListener('click', () => openSheet('order-card'));

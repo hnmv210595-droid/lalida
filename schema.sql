@@ -60,7 +60,12 @@ CREATE INDEX idx_menu_items_category ON menu_items(category_id);
 CREATE TABLE orders (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   table_id       INTEGER REFERENCES tables(id) ON DELETE SET NULL,
-  table_number   INTEGER NOT NULL,
+  table_number   INTEGER NOT NULL,                 -- đơn online: 0
+  order_type     TEXT NOT NULL DEFAULT 'table' CHECK (order_type IN ('table','online')),
+  customer_name    TEXT,                           -- đơn online: thông tin giao hàng
+  customer_phone   TEXT,
+  customer_address TEXT,
+  access_token   TEXT,                             -- đơn online: mã để khách xem/sửa đơn trên máy của mình
   status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid','cancelled')),
   note           TEXT,
   subtotal       INTEGER NOT NULL DEFAULT 0,
@@ -76,7 +81,7 @@ CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_table ON orders(table_number, status);
 CREATE INDEX idx_orders_paid_at ON orders(paid_at);
 -- Đảm bảo mỗi bàn chỉ có 1 đơn đang mở (chống tạo trùng khi 2 máy cùng gửi)
-CREATE UNIQUE INDEX ux_orders_open_table ON orders(table_number) WHERE status = 'open';
+CREATE UNIQUE INDEX ux_orders_open_table ON orders(table_number) WHERE status = 'open' AND order_type = 'table';
 
 -- Trạng thái món: pending (Đang chờ) -> cooking (Đang làm) -> served (Đã lên món)
 CREATE TABLE order_items (

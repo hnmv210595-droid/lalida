@@ -1,1 +1,4 @@
-/  /order  302
+# Trang chủ lalida.net -> Đặt online
+/  /online  302
+# Đặt online dùng chung giao diện với trang gọi món tại bàn (order.html), order.js tự nhận chế độ theo đường dẫn
+/online  /order  200

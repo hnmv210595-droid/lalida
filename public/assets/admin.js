@@ -1,6 +1,6 @@
 // Trang quản trị LaLiDa: /admin
 (() => {
-  const { api, money, esc, vnDateTime, vnToday, toast, storage, STATUS, CATEGORY_ICON } = window.LL;
+  const { api, money, esc, vnDateTime, vnToday, toast, storage, STATUS, CATEGORY_ICON, orderLabel } = window.LL;
   const P = window.LLPrint;
   const $ = (id) => document.getElementById(id);
 
@@ -234,11 +234,13 @@
         </div>`;
       })
       .join('');
-    return `<div class="card p-4 flex flex-col ${waiting ? 'ring-2 ring-amber-300' : ''}">
+    const online = o.order_type === 'online';
+    return `<div class="card p-4 flex flex-col ${waiting ? 'ring-2 ring-amber-300' : ''} ${online ? 'border-l-4 !border-l-clay-500' : ''}">
       <div class="flex items-center justify-between">
-        <div class="text-xl font-bold text-brand-800">Bàn ${o.table_number}</div>
+        <div class="text-xl font-bold text-brand-800">${online ? '🛵 ' : ''}${orderLabel(o)}</div>
         <div class="text-xs text-stone-500">#${o.id} · ${vnDateTime(o.created_at, false)}</div>
       </div>
+      ${online ? customerInfo(o) : ''}
       ${o.note ? `<div class="mt-1 text-sm bg-amber-50 text-amber-900 rounded px-2 py-1">📝 ${esc(o.note)}</div>` : ''}
       <div class="divide-y divide-stone-100 mt-2 flex-1">${items}</div>
       <div class="border-t border-stone-200 pt-2 mt-2 text-sm space-y-0.5">
@@ -251,18 +253,27 @@
         <button data-order="${o.id}" data-act="print" class="btn btn-ghost">🖨️ In</button>
         <button data-order="${o.id}" data-act="pay" class="btn btn-accent">Đã thanh toán</button>
       </div>
-      <div class="grid grid-cols-2 gap-2 mt-2">
-        <button data-order="${o.id}" data-act="add" class="btn btn-ghost">＋ Thêm món</button>
+      <div class="grid ${online ? 'grid-cols-1' : 'grid-cols-2'} gap-2 mt-2">
+        ${online ? '' : `<button data-order="${o.id}" data-act="add" class="btn btn-ghost">＋ Thêm món</button>`}
         <button data-order="${o.id}" data-act="voucher" class="btn btn-ghost">🎁 Mã tặng nước</button>
       </div>
       <button data-order="${o.id}" data-act="cancel" class="text-xs text-red-600 mt-2 self-end hover:underline">Huỷ đơn</button>
     </div>`;
   }
 
+  // Thông tin giao hàng của đơn online (bấm số để gọi)
+  function customerInfo(o) {
+    return `<div class="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-sm">
+      <div class="font-semibold">${esc(o.customer_name)} · <a href="tel:${esc(o.customer_phone)}" class="text-brand-700 underline">${esc(o.customer_phone)}</a></div>
+      <div class="text-stone-600">📍 ${esc(o.customer_address)}</div>
+    </div>`;
+  }
+
   function paidOrderCard(o) {
     const n = o.items.filter((i) => i.status !== 'cancelled').reduce((s, i) => s + i.quantity, 0);
     return `<div class="card p-4">
-      <div class="flex justify-between"><b class="text-brand-800">Bàn ${o.table_number}</b><span class="text-xs text-stone-500">#${o.id} · ${vnDateTime(o.paid_at, false)}</span></div>
+      <div class="flex justify-between"><b class="text-brand-800">${o.order_type === 'online' ? '🛵 ' : ''}${orderLabel(o)}</b><span class="text-xs text-stone-500">#${o.id} · ${vnDateTime(o.paid_at, false)}</span></div>
+      ${o.order_type === 'online' ? `<div class="text-xs text-stone-500 mt-1">${esc(o.customer_name)} · ${esc(o.customer_phone)}</div>` : ''}
       <div class="text-sm text-stone-600 mt-1">${n} món · ${P.PAY_LABEL[o.payment_method] || ''}</div>
       <div class="flex items-center justify-between mt-2">
         <span class="font-bold text-lg">${money(o.total)}</span>
@@ -287,7 +298,7 @@
         const act = orderBtn.dataset.act;
         if (act === 'serve') {
           await call(`/admin/orders/${id}/serve`, { method: 'POST' });
-          toast(`Bàn ${order.table_number}: đã lên đủ món`);
+          toast(`${orderLabel(order)}: đã lên đủ món`);
         } else if (act === 'print') {
           await printOrder(order);
           return;
@@ -298,7 +309,7 @@
         } else if (act === 'voucher') {
           return openVoucherModal(order);
         } else if (act === 'cancel') {
-          if (!confirm(`Huỷ toàn bộ đơn #${id} của bàn ${order.table_number}?`)) return;
+          if (!confirm(`Huỷ toàn bộ đơn #${id} của ${orderLabel(order)}?`)) return;
           await call(`/admin/orders/${id}/cancel`, { method: 'POST' });
           toast('Đã huỷ đơn');
         } else return;
@@ -326,7 +337,7 @@
 
   function openPayModal(order) {
     openModal(
-      `Thanh toán - Bàn ${order.table_number}`,
+      `Thanh toán - ${orderLabel(order)}`,
       `<form id="pay-form" class="space-y-4">
         <div class="rounded-xl bg-cream-100 p-4 text-sm space-y-1">
           <div class="flex justify-between"><span>Tạm tính</span><span>${money(order.subtotal)}</span></div>
@@ -358,7 +369,7 @@
         onSubmit(root.querySelector('#pay-form'), async (d) => {
           const { order: paid } = await call(`/admin/orders/${order.id}/pay`, { method: 'POST', body: { payment_method: d.payment_method } });
           closeModal();
-          toast(`Bàn ${order.table_number} đã thanh toán ${money(paid.total)}`);
+          toast(`${orderLabel(order)} đã thanh toán ${money(paid.total)}`);
           S.lastOrdersJson = '';
           loadOrders();
           pollTick();
@@ -375,7 +386,7 @@
     const drinks = items.filter((i) => drinkCat && i.category_id === drinkCat.id && i.is_available);
     if (!drinks.length) return toast('Chưa có đồ uống nào đang bán', 'error');
     openModal(
-      `🎁 Mã tặng nước - Bàn ${order.table_number}`,
+      `🎁 Mã tặng nước - ${orderLabel(order)}`,
       `<form id="voucher-form" class="space-y-4">
         <div><label class="text-sm font-medium">Mã tặng của khách</label>
           <input name="code" required maxlength="20" autocomplete="off" placeholder="LLD-XXXXXX" class="input mt-1 uppercase tracking-widest text-lg font-bold" /></div>
@@ -442,7 +453,9 @@
   }
 
   // ================= BÀN & QR =================
-  const tableUrl = (n) => `${(S.settings.public_base_url || location.origin).replace(/\/+$/, '')}/order?table=${n}`;
+  const baseUrl = () => (S.settings.public_base_url || location.origin).replace(/\/+$/, '');
+  const tableUrl = (n) => `${baseUrl()}/order?table=${n}`;
+  const onlineUrl = () => `${baseUrl()}/online`;
 
   async function renderTables() {
     const { tables } = await call('/admin/tables');
@@ -454,6 +467,15 @@
           <div><label class="text-sm font-medium">Số ghế</label><input name="seats" type="number" min="1" value="4" class="input mt-1" /></div>
           <button class="btn btn-primary h-[42px]">＋ Thêm bàn</button>
         </form>
+      </div>
+      <div class="card p-4 mb-4 flex flex-wrap items-center gap-4">
+        <div class="qr" id="online-qr"></div>
+        <div class="flex-1 min-w-[200px]">
+          <div class="font-bold text-brand-800">🛵 Đặt online</div>
+          <a href="${esc(onlineUrl())}" target="_blank" rel="noopener" class="text-sm text-brand-700 underline break-all">${esc(onlineUrl())}</a>
+          <p class="text-xs text-stone-500 mt-1">Dán link lên Facebook / Zalo hoặc in mã QR này lên tờ rơi. Khách chọn món rồi điền Tên, SĐT, Địa chỉ để đặt.</p>
+          <button id="print-online-qr" class="btn btn-ghost mt-2">🖨️ In QR đặt online</button>
+        </div>
       </div>
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div class="text-sm text-stone-600">Tổng số bàn: <b>${tables.length}</b> · Link QR: <code class="bg-white px-1 rounded">${esc(tableUrl('X'))}</code></div>
@@ -483,6 +505,20 @@
       if (window.QRCode) new QRCode(el, { text: tableUrl(el.dataset.qr), width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
       else el.textContent = 'Không tải được thư viện QR';
     });
+    if (window.QRCode) new QRCode($('online-qr'), { text: onlineUrl(), width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+    $('print-online-qr').onclick = () => {
+      const canvas = $('online-qr').querySelector('canvas');
+      P.printHtml(
+        `<div class="qr-sheet" style="grid-template-columns:1fr;max-width:110mm;margin:auto"><div class="qr-card">
+          <img class="logo" src="/assets/logo.webp" alt="LaLiDa" />
+          <div style="font-size:16pt;font-weight:700;color:#3b512a">🛵 Đặt món online</div>
+          <div class="qr"><img src="${canvas ? canvas.toDataURL('image/png') : ''}" style="width:55mm;height:55mm" alt="QR" /></div>
+          <div style="font-size:12pt;font-weight:600">Quét mã để đặt món - giao tận nơi</div>
+          <div style="font-size:9pt;color:#666;margin-top:2mm">${esc(onlineUrl())}</div>
+        </div></div>`,
+        'A4'
+      );
+    };
 
     onSubmit($('table-form'), async (d) => {
       await call('/admin/tables', { method: 'POST', body: { number: Number(d.number), name: d.name, seats: Number(d.seats) } });
@@ -1229,6 +1265,8 @@
             <div class="font-medium">Khách quét QR & quà tặng góp ý</div>
             <label class="flex items-start gap-2 text-sm"><input type="checkbox" name="customer_ordering" class="mt-1" ${s.customer_ordering === '1' ? 'checked' : ''} />
               <span>Cho phép khách tự gọi món qua QR <span class="block text-xs text-stone-500">Bật (mặc định): khách chọn món, đặt đơn, xem và sửa đơn. Tắt: khách chỉ xem Thực đơn và Góp ý & Phản hồi; nhân viên gọi món cho bàn.</span></span></label>
+            <label class="flex items-start gap-2 text-sm"><input type="checkbox" name="online_ordering" class="mt-1" ${s.online_ordering === '1' ? 'checked' : ''} />
+              <span>Nhận đơn Đặt online <span class="block text-xs text-stone-500">Trang đặt món: <b>${esc((s.public_base_url || location.origin).replace(/\/+$/, ''))}/online</b> - khách điền Tên, SĐT, Địa chỉ khi đặt.</span></span></label>
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="feedback_reward_enabled" ${s.feedback_reward_enabled === '1' ? 'checked' : ''} /> Tặng 1 ly nước (lần sau) cho khách góp ý</label>
             <div class="grid grid-cols-2 gap-3">
               <div><label class="text-xs font-medium">Số mã tặng / lượt ăn của bàn</label><input name="vouchers_per_order" type="number" min="1" max="20" value="${esc(s.vouchers_per_order || '1')}" class="input mt-1" /></div>
@@ -1273,6 +1311,7 @@
           ...d,
           vat_enabled: d.vat_enabled ? '1' : '0',
           customer_ordering: d.customer_ordering ? '1' : '0',
+          online_ordering: d.online_ordering ? '1' : '0',
           feedback_reward_enabled: d.feedback_reward_enabled ? '1' : '0',
         },
       });
