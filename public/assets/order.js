@@ -193,7 +193,7 @@
       .map((i) => {
         const qty = state.cart[i.id]?.qty || 0;
         const img = i.image_url
-          ? `<img src="${esc(i.image_url)}" alt="" loading="lazy" class="w-full h-full object-cover" />`
+          ? `<img src="${esc(i.image_url)}" alt="${esc(i.name)}" loading="lazy" decoding="async" width="96" height="96" class="w-full h-full object-cover" />`
           : `<span class="text-4xl">${CATEGORY_ICON[cat.slug] || '🍽️'}</span>`;
         const soldOut = !i.is_available;
         return `<article class="rounded-2xl border shadow-sm p-3 flex gap-3 ${soldOut ? 'bg-stone-100 border-stone-200' : 'bg-white border-cream-200'}">

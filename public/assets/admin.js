@@ -609,7 +609,12 @@
                 list
                   .map(
                     (i) => `<tr class="${i.is_available ? '' : 'bg-stone-50'}">
-                  <td><div class="font-medium ${i.is_available ? '' : 'text-stone-400 line-through'}">${esc(i.name)}</div><div class="text-xs text-stone-500">${esc(i.description || '')}</div></td>
+                  <td><div class="flex items-center gap-3">
+                    <div class="w-12 h-12 shrink-0 rounded-lg bg-cream-100 overflow-hidden flex items-center justify-center">${
+                      i.image_url ? `<img src="${esc(i.image_url)}" alt="" loading="lazy" class="w-full h-full object-cover" />` : `<span class="text-xl">${CATEGORY_ICON[c.slug] || '🍽️'}</span>`
+                    }</div>
+                    <div><div class="font-medium ${i.is_available ? '' : 'text-stone-400 line-through'}">${esc(i.name)}</div><div class="text-xs text-stone-500">${esc(i.description || '')}</div></div>
+                  </div></td>
                   <td class="text-right font-semibold whitespace-nowrap">${money(i.price)}</td>
                   <td>${i.is_available ? '<span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-800">Đang bán</span>' : '<span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold">Đã bán hết</span>'}</td>
                   <td class="text-right whitespace-nowrap">
@@ -641,17 +646,59 @@
             <div><label class="text-sm font-medium">Giá (đ) *</label><input name="price" type="number" min="0" step="1000" required value="${item.price ?? ''}" class="input mt-1" /></div>
             <div><label class="text-sm font-medium">Thứ tự</label><input name="sort_order" type="number" min="0" value="${item.sort_order ?? 0}" class="input mt-1" /></div>
           </div>
-          <div><label class="text-sm font-medium">Link ảnh (không bắt buộc)</label><input name="image_url" type="url" maxlength="500" value="${esc(item.image_url || '')}" class="input mt-1" placeholder="https://…" /></div>
+          <div>
+            <label class="text-sm font-medium">Ảnh món</label>
+            <div class="mt-1 flex items-center gap-3">
+              <div id="img-preview" class="w-24 h-24 shrink-0 rounded-xl bg-cream-100 overflow-hidden flex items-center justify-center text-3xl">${
+                item.image_url ? `<img src="${esc(item.image_url)}" alt="" class="w-full h-full object-cover" />` : '📷'
+              }</div>
+              <div class="flex flex-col gap-2">
+                <label class="btn btn-ghost cursor-pointer text-center">📷 Chọn / chụp ảnh<input id="img-file" type="file" accept="image/*" class="hidden" /></label>
+                <button type="button" id="img-remove" class="btn btn-danger ${item.image_url ? '' : 'hidden'}">Xoá ảnh</button>
+              </div>
+            </div>
+            <p id="img-info" class="text-xs text-stone-500 mt-1">Ảnh được tự thu nhỏ (rộng tối đa 600px) trước khi tải lên.</p>
+            <input type="hidden" name="image_url" value="${esc(item.image_url || '')}" />
+          </div>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_available" ${item.is_available === 0 ? '' : 'checked'} /> Đang bán (bỏ chọn = Đã bán hết)</label>
           <button class="btn btn-primary w-full py-3">Lưu</button>
         </form>`,
-        (root) =>
-          onSubmit(root.querySelector('#menu-form'), async (d) => {
-            await save(item.id, { ...d, category_id: Number(d.category_id), price: Number(d.price), sort_order: Number(d.sort_order), is_available: !!d.is_available });
+        (root) => {
+          const form = root.querySelector('#menu-form');
+          let photo = null; // ảnh đã thu nhỏ, chờ tải lên khi bấm Lưu
+          root.querySelector('#img-file').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+              root.querySelector('#img-info').textContent = 'Đang thu nhỏ ảnh…';
+              photo = await resizeImage(file);
+              root.querySelector('#img-preview').innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="" class="w-full h-full object-cover" />`;
+              root.querySelector('#img-info').textContent = `Ảnh đã thu nhỏ: ${Math.round(photo.size / 1024)} KB (gốc ${Math.round(file.size / 1024)} KB). Bấm Lưu để tải lên.`;
+              root.querySelector('#img-remove').classList.remove('hidden');
+            } catch (err) {
+              photo = null;
+              root.querySelector('#img-info').textContent = err.message;
+            }
+          };
+          root.querySelector('#img-remove').onclick = (e) => {
+            photo = null;
+            form.image_url.value = '';
+            root.querySelector('#img-file').value = '';
+            root.querySelector('#img-preview').innerHTML = '📷';
+            root.querySelector('#img-info').textContent = 'Ảnh sẽ được xoá khi bấm Lưu.';
+            e.target.classList.add('hidden');
+          };
+          onSubmit(form, async (d) => {
+            const res = await save(item.id, { ...d, category_id: Number(d.category_id), price: Number(d.price), sort_order: Number(d.sort_order), is_available: !!d.is_available });
+            if (photo) {
+              root.querySelector('#img-info').textContent = 'Đang tải ảnh lên…';
+              await uploadMenuImage(item.id || res.id, photo);
+            }
             closeModal();
             toast('Đã lưu món');
             renderMenu();
-          })
+          });
+        }
       );
 
     $('add-item').onclick = () => edit();
@@ -678,6 +725,44 @@
           renderMenu();
         })
     );
+  }
+
+  // Thu nhỏ ảnh ngay trên trình duyệt: tối đa 600x600, WebP (máy không hỗ trợ thì JPEG) -> thường 30-80 KB
+  async function resizeImage(file, max = 600) {
+    if (!file.type.startsWith('image/')) throw new Error('Vui lòng chọn file ảnh');
+    let img;
+    try {
+      img = await createImageBitmap(file);
+    } catch {
+      img = await new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('Không đọc được ảnh này (thử chụp lại hoặc chọn ảnh JPG/PNG)'));
+        el.src = URL.createObjectURL(file);
+      });
+    }
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    let blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.8));
+    if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.82));
+    if (!blob) throw new Error('Không xử lý được ảnh');
+    return blob;
+  }
+
+  async function uploadMenuImage(id, blob) {
+    const res = await fetch(`/api/admin/menu/${id}/image`, {
+      method: 'PUT',
+      headers: { 'content-type': blob.type },
+      body: blob,
+      credentials: 'same-origin',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) showLogin();
+    if (!res.ok) throw new Error(data.error || 'Tải ảnh lên thất bại');
+    return data;
   }
 
   // ================= THU CHI & LỢI NHUẬN (mã PIN cấp 2) =================

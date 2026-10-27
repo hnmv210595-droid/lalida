@@ -7,6 +7,11 @@ pages_build_output_dir = "./public"
 [placement]
 mode = "smart"
 
+# Kho ảnh món ăn (Cloudflare R2). Tạo một lần: npx wrangler r2 bucket create lalida-images
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "lalida-images"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "lalida-db"

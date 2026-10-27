@@ -11,11 +11,15 @@ import {
 
 const routes = [];
 // access: 'public' | 'admin' | 'finance' (finance = admin + mã PIN cấp 2)
-function route(method, pattern, access, handler) {
+// options.upload = nhận dữ liệu ảnh thay vì JSON
+function route(method, pattern, access, handler, options = {}) {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => (keys.push(k), '(\\d+)')) + '$');
-  routes.push({ method, re, keys, access, handler });
+  routes.push({ method, re, keys, access, handler, upload: !!options.upload });
 }
+
+const IMAGE_TYPES = { 'image/webp': 'webp', 'image/jpeg': 'jpg' };
+const MAX_IMAGE_BYTES = 1024 * 1024; // ảnh đã được thu nhỏ trên trình duyệt, thường chỉ 30-80 KB
 
 const PUBLIC_SETTING_KEYS = [
   'shop_name', 'shop_slogan', 'shop_address', 'shop_phone', 'vat_enabled', 'vat_percent',
@@ -528,26 +532,72 @@ function menuFields(body) {
 }
 
 route('POST', '/admin/menu', 'admin', async ({ env, body }) => {
-  await env.DB.prepare(
+  const res = await env.DB.prepare(
     'INSERT INTO menu_items (category_id, name, description, price, image_url, is_available, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
   )
     .bind(...menuFields(body))
     .run();
-  return { ok: true };
+  return { ok: true, id: res.meta.last_row_id };
 });
 
-route('PUT', '/admin/menu/:id', 'admin', async ({ env, params, body }) => {
-  const res = await env.DB.prepare(
+route('PUT', '/admin/menu/:id', 'admin', async ({ env, params, body, url }) => {
+  const old = await env.DB.prepare('SELECT image_url FROM menu_items WHERE id = ?').bind(params.id).first();
+  if (!old) throw new HttpError(404, 'Không tìm thấy món');
+  const fields = menuFields(body);
+  await env.DB.prepare(
     'UPDATE menu_items SET category_id = ?, name = ?, description = ?, price = ?, image_url = ?, is_available = ?, sort_order = ? WHERE id = ?'
   )
-    .bind(...menuFields(body), params.id)
+    .bind(...fields, params.id)
     .run();
-  if (!res.meta.changes) throw new HttpError(404, 'Không tìm thấy món');
+  if (old.image_url !== fields[4]) await deleteStoredImage(env, old.image_url, url.origin); // đổi sang link khác -> xoá ảnh cũ trong kho
   return { ok: true };
 });
 
-route('DELETE', '/admin/menu/:id', 'admin', async ({ env, params }) => {
+route('DELETE', '/admin/menu/:id', 'admin', async ({ env, params, url }) => {
+  const item = await env.DB.prepare('SELECT image_url FROM menu_items WHERE id = ?').bind(params.id).first();
   await env.DB.prepare('DELETE FROM menu_items WHERE id = ?').bind(params.id).run();
+  await deleteStoredImage(env, item?.image_url, url.origin);
+  return { ok: true };
+});
+
+// ---------- Ảnh món ăn (Cloudflare R2) ----------
+// Chỉ xoá ảnh do hệ thống lưu (/images/menu/...), không đụng tới link ảnh bên ngoài.
+// Xoá cả bản đã lưu tạm ở CDN (vùng máy chủ hiện tại) để ảnh cũ không còn truy cập được.
+async function deleteStoredImage(env, imageUrl, origin) {
+  const key = imageUrl?.startsWith('/images/') ? imageUrl.slice('/images/'.length) : null;
+  if (!key || !env.IMAGES) return;
+  await env.IMAGES.delete(key);
+  if (origin) await caches.default.delete(new Request(origin + imageUrl)).catch(() => {});
+}
+
+route(
+  'PUT',
+  '/admin/menu/:id/image',
+  'admin',
+  async ({ env, params, request, url }) => {
+    if (!env.IMAGES) throw new HttpError(500, 'Chưa gắn kho ảnh R2 (binding "IMAGES")');
+    const item = await env.DB.prepare('SELECT image_url FROM menu_items WHERE id = ?').bind(params.id).first();
+    if (!item) throw new HttpError(404, 'Không tìm thấy món');
+    const data = await request.arrayBuffer();
+    if (!data.byteLength) throw new HttpError(400, 'Ảnh trống');
+    if (data.byteLength > MAX_IMAGE_BYTES) throw new HttpError(413, 'Ảnh quá lớn (tối đa 1 MB sau khi thu nhỏ)');
+    const contentType = request.headers.get('content-type');
+    // Tên mới cho mỗi lần tải -> trình duyệt / CDN luôn lấy ảnh mới, ảnh cũ được lưu dài hạn an toàn
+    const key = `menu/${params.id}-${Date.now()}.${IMAGE_TYPES[contentType]}`;
+    await env.IMAGES.put(key, data, { httpMetadata: { contentType } });
+    const imageUrl = `/images/${key}`;
+    await env.DB.prepare('UPDATE menu_items SET image_url = ? WHERE id = ?').bind(imageUrl, params.id).run();
+    await deleteStoredImage(env, item.image_url, url.origin);
+    return { ok: true, image_url: imageUrl };
+  },
+  { upload: true }
+);
+
+route('DELETE', '/admin/menu/:id/image', 'admin', async ({ env, params, url }) => {
+  const item = await env.DB.prepare('SELECT image_url FROM menu_items WHERE id = ?').bind(params.id).first();
+  if (!item) throw new HttpError(404, 'Không tìm thấy món');
+  await env.DB.prepare('UPDATE menu_items SET image_url = NULL WHERE id = ?').bind(params.id).run();
+  await deleteStoredImage(env, item.image_url, url.origin);
   return { ok: true };
 });
 
@@ -1002,9 +1052,13 @@ export async function handle(request, env) {
     if (!match) throw new HttpError(pathMatched ? 405 : 404, pathMatched ? 'Phương thức không được hỗ trợ' : 'Không tìm thấy API');
 
     let body = {};
-    if (method !== 'GET') {
+    const contentType = request.headers.get('content-type') || '';
+    if (match.r.upload) {
+      // Tải ảnh: nhận thẳng dữ liệu ảnh (form từ trang khác cũng không gửi được kiểu này mà không qua CORS)
+      if (!IMAGE_TYPES[contentType]) throw new HttpError(415, 'Chỉ nhận ảnh WebP hoặc JPEG');
+    } else if (method !== 'GET') {
       // Chống CSRF: chỉ nhận JSON (form từ trang khác không gửi được JSON mà không qua CORS)
-      if (!(request.headers.get('content-type') || '').includes('application/json')) throw new HttpError(415, 'Yêu cầu phải là JSON');
+      if (!contentType.includes('application/json')) throw new HttpError(415, 'Yêu cầu phải là JSON');
       body = await readJson(request);
     }
 
