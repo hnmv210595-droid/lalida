@@ -69,17 +69,23 @@ const PAYMENT_METHODS = ['cash', 'transfer', 'card'];
 // =============================================================
 // KHÁCH HÀNG (không cần đăng nhập)
 // =============================================================
-route('GET', '/public/menu', 'public', async ({ env }) => {
-  const [cats, items, settings] = await Promise.all([
-    env.DB.prepare('SELECT id, slug, name FROM categories ORDER BY sort_order, id').all(),
+// Thực đơn + cài đặt công khai (+ thông tin bàn khi có ?table=X) trong MỘT lượt gọi database (batch)
+// để trang khách chỉ cần một yêu cầu khi mở.
+route('GET', '/public/menu', 'public', async ({ env, url }) => {
+  const tableNo = int(url.searchParams.get('table'), { min: 1, max: 100000, required: false, name: 'Số bàn' });
+  const [cats, items, settings, table] = await env.DB.batch([
+    env.DB.prepare('SELECT id, slug, name FROM categories ORDER BY sort_order, id'),
     // Gồm cả món hết hàng (is_available = 0) để khách thấy "Đã bán hết"; đặt món hết hàng bị chặn ở prepareItems
-    env.DB.prepare(
-      'SELECT id, category_id, name, description, price, image_url, is_available FROM menu_items ORDER BY sort_order, id'
-    ).all(),
-    getSettings(env),
+    env.DB.prepare('SELECT id, category_id, name, description, price, image_url, is_available FROM menu_items ORDER BY sort_order, id'),
+    env.DB.prepare('SELECT key, value FROM settings'),
+    env.DB.prepare('SELECT number, name FROM tables WHERE number = ? AND is_active = 1').bind(tableNo ?? 0),
   ]);
-  const pub = Object.fromEntries(PUBLIC_SETTING_KEYS.map((k) => [k, settings[k] ?? '']));
-  return { categories: cats.results, items: items.results, settings: pub };
+  const s = Object.fromEntries(settings.results.map((r) => [r.key, r.value]));
+  const pub = Object.fromEntries(PUBLIC_SETTING_KEYS.map((k) => [k, s[k] ?? '']));
+  const body = { categories: cats.results, items: items.results, settings: pub };
+  if (tableNo) body.table = table.results[0] ?? null;
+  // Trình duyệt được dùng lại kết quả trong 10 giây (vd. khi khách bấm qua lại giữa các trang)
+  return json(body, 200, { 'cache-control': 'public, max-age=10' });
 });
 
 route('GET', '/public/tables/:number', 'public', async ({ env, params }) => {

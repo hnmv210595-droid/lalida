@@ -52,7 +52,9 @@
       return;
     }
     try {
-      const t = await api(`/public/tables/${tableNumber}`);
+      // Thông tin bàn đã có sẵn trong kết quả thực đơn (không cần gọi thêm API)
+      const t = state.tableInfo !== undefined ? state.tableInfo : await api(`/public/tables/${tableNumber}`);
+      if (!t) throw new Error('Bàn không tồn tại');
       state.tableOk = true;
       renderCart();
       $('table-badge').innerHTML = `🍽️ ${esc(t.name || 'Bàn ' + t.number)}`;
@@ -69,10 +71,31 @@
   }
 
   // ---------- Thực đơn ----------
-  // Tải thực đơn; gọi lại mỗi 30 giây để cập nhật món "Đã bán hết" mà không đổi màn hình đang xem
-  async function loadMenu(refresh = false) {
+  // Thực đơn lần trước lưu trên máy: hiện ngay lập tức khi mở lại trang, rồi cập nhật khi có dữ liệu mới
+  const MENU_CACHE_KEY = 'lalida_menu_cache';
+  function showCachedMenu() {
+    const cached = storage.get(MENU_CACHE_KEY, null);
+    if (!cached?.categories?.length) return false;
+    Object.assign(state, { categories: cached.categories, items: cached.items, settings: cached.settings });
+    applyMode();
+    state.tab = state.categories[0]?.slug;
+    renderTabs();
+    renderMenu();
+    renderCart();
+    route();
+    return true;
+  }
+
+  // Tải thực đơn; gọi lại mỗi 30 giây để cập nhật món "Đã bán hết" mà không đổi màn hình đang xem.
+  // Lần đầu dùng yêu cầu đã được gửi sẵn trong order.html (window.__menuRequest).
+  // quiet = đã hiện bản lưu trên máy, chỉ cập nhật mà không cuộn / đổi màn hình.
+  async function loadMenu(refresh = false, quiet = false) {
     try {
-      const data = await api('/public/menu');
+      const early = !refresh && window.__menuRequest;
+      window.__menuRequest = null;
+      const data = early ? await early : await api(`/public/menu${tableNumber ? '?table=' + tableNumber : ''}`);
+      if (!refresh) state.tableInfo = data.table;
+      storage.set(MENU_CACHE_KEY, { categories: data.categories, items: data.items, settings: data.settings });
       Object.assign(state, { categories: data.categories, items: data.items, settings: data.settings });
       applyMode();
       // Bỏ khỏi giỏ các món đã bán hết / không còn phục vụ
@@ -93,9 +116,9 @@
       renderMenu();
       renderCart();
     } catch (e) {
-      if (!refresh) $('menu-grid').innerHTML = `<div class="text-red-600">${esc(e.message)}</div>`;
+      if (!refresh && !quiet) $('menu-grid').innerHTML = `<div class="text-red-600">${esc(e.message)}</div>`;
     }
-    if (!refresh) route();
+    if (!refresh) route(quiet);
   }
 
   // Khách tự gọi món (bật/tắt trong Cài đặt Admin); tắt thì chỉ xem thực đơn & góp ý
@@ -113,10 +136,24 @@
     }
   }
 
-  // Điều hướng giữa Trang chính / Menu / Góp ý theo hash (nút Back của điện thoại vẫn dùng được)
-  function route() {
+  // Điều hướng giữa Trang chính / Menu / Góp ý theo hash (nút Back của điện thoại vẫn dùng được).
+  // keepScroll = chỉ cập nhật bố cục, không cuộn trang / đóng bảng đang mở.
+  function route(keepScroll = false) {
+    if (keepScroll === true) return applyLayout(state.view);
     const hash = location.hash;
     const view = hash === '#gop-y' ? 'feedback' : hash === '#menu' || hash === '#don-da-dat' ? 'menu' : 'home';
+    applyLayout(view);
+    closeSheet();
+    const showSide = view === 'menu' && state.ordering;
+    if (hash === '#don-da-dat' && showSide) {
+      if (window.innerWidth < 1024) openSheet('order-card');
+      else $('order-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo(0, 0);
+    }
+  }
+
+  function applyLayout(view) {
     state.view = view;
     const inMenu = view === 'menu';
     const showSide = inMenu && state.ordering;
@@ -130,13 +167,6 @@
     $('main').classList.toggle('lg:grid', showSide);
     $('main').classList.toggle('pb-28', showSide);
     $('ordering-note').classList.toggle('hidden', !inMenu || state.ordering);
-    closeSheet();
-    if (hash === '#don-da-dat' && showSide) {
-      if (window.innerWidth < 1024) openSheet('order-card');
-      else $('order-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      window.scrollTo(0, 0);
-    }
   }
 
   function renderTabs() {
@@ -527,7 +557,8 @@
   renderStars();
   renderVouchers();
   renderCart();
-  loadMenu().then(initTable);
+  const shownCached = showCachedMenu();
+  loadMenu(false, shownCached).then(initTable); // đã hiện bản lưu trên máy -> cập nhật lặng lẽ, không cuộn lại trang
   setInterval(() => loadMenu(true), 30000);
   window.LLOrderReady = true; // báo cho đoạn dự phòng trong order.html là script đã chạy
 })();

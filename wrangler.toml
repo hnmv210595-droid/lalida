@@ -3,6 +3,10 @@ name = "lalida"
 compatibility_date = "2025-01-15"
 pages_build_output_dir = "./public"
 
+# Chạy API ở gần database D1 nhất (giảm thời gian mỗi lượt truy vấn)
+[placement]
+mode = "smart"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "lalida-db"

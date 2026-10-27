@@ -6,3 +6,15 @@
 /admin*
   X-Frame-Options: DENY
   X-Robots-Tag: noindex
+
+# CSS / JS luôn được gọi kèm số phiên bản (?v=...) -> cho trình duyệt lưu 1 năm, không cần hỏi lại máy chủ
+/assets/*.css
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+# Logo, biểu tượng: lưu 7 ngày
+/assets/*.webp
+  Cache-Control: public, max-age=604800
+/assets/*.png
+  Cache-Control: public, max-age=604800

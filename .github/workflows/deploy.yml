@@ -29,6 +29,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Build CSS
+        run: npm run build:css
+
       - name: Deploy
         run: npx wrangler pages deploy --branch main --commit-dirty=true
         env:

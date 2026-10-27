@@ -1,5 +1,8 @@
-// Màu thương hiệu LaLiDa (xanh lá rêu + kem + cam đất) cho Tailwind CDN
-tailwind.config = {
+// Tailwind dựng sẵn file CSS tĩnh (public/assets/app.css) thay cho bản CDN 440 KB biên dịch trên điện thoại.
+// Chạy lại sau khi sửa giao diện: npm run build:css
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./public/**/*.html', './public/assets/**/*.js'],
   theme: {
     extend: {
       colors: {

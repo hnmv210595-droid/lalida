@@ -24,12 +24,14 @@ export function computeTotals(items, percent) {
 // Gắn danh sách món cho các đơn; đơn đang mở được tính lại theo VAT hiện hành
 export async function attachItems(env, orders) {
   if (!orders.length) return orders;
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM order_items WHERE order_id IN (SELECT value FROM json_each(?)) ORDER BY id'
-  )
-    .bind(JSON.stringify(orders.map((o) => o.id)))
-    .all();
-  const percent = vatPercent(await getSettings(env));
+  // Món + cài đặt VAT trong một lượt gọi database
+  const [{ results }, settingRows] = await env.DB.batch([
+    env.DB.prepare('SELECT * FROM order_items WHERE order_id IN (SELECT value FROM json_each(?)) ORDER BY id').bind(
+      JSON.stringify(orders.map((o) => o.id))
+    ),
+    env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('vat_enabled', 'vat_percent')"),
+  ]);
+  const percent = vatPercent(Object.fromEntries(settingRows.results.map((r) => [r.key, r.value])));
   return orders.map((o) => {
     const items = results.filter((i) => i.order_id === o.id);
     const totals = o.status === 'open' ? computeTotals(items, percent) : {};

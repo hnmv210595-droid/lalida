@@ -1,0 +1,40 @@
+/* Nguồn CSS của LaLiDa -> dựng thành public/assets/app.css bằng: npm run build:css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Dùng chung ---- */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+body { -webkit-tap-highlight-color: transparent; }
+
+/* ---- Trang quản trị ---- */
+.input { width: 100%; border: 1px solid #d6d3d1; border-radius: .5rem; padding: .5rem .75rem; background: #fff; }
+.input:focus { outline: none; box-shadow: 0 0 0 2px #5f8241; }
+.btn { border-radius: .6rem; padding: .5rem 1rem; font-weight: 600; font-size: .875rem; transition: background-color .15s; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: #3b512a; color: #fff; } .btn-primary:hover { background: #304124; }
+.btn-accent { background: #c9762f; color: #fff; } .btn-accent:hover { background: #a95f22; }
+.btn-ghost { background: #fff; color: #304124; border: 1px solid #c7d7b4; } .btn-ghost:hover { background: #f3f6ef; }
+.btn-danger { background: #fff; color: #b91c1c; border: 1px solid #fecaca; } .btn-danger:hover { background: #fef2f2; }
+.card { background: #fff; border: 1px solid #efe2c4; border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.tbl th { text-align: left; font-weight: 600; font-size: .75rem; text-transform: uppercase; color: #78716c; padding: .5rem; border-bottom: 1px solid #e7e5e4; }
+.tbl td { padding: .5rem; border-bottom: 1px solid #f5f5f4; vertical-align: top; }
+
+/* ---- In ấn: hoá đơn nhiệt 58/80mm & tờ QR ---- */
+#print-area { display: none; }
+@media print {
+  body > *:not(#print-area) { display: none !important; }
+  #print-area { display: block !important; }
+  body { background: #fff !important; }
+}
+.bill { font-family: 'Courier New', monospace; color: #000; font-size: 12px; line-height: 1.35; padding: 2mm 3mm; }
+.bill.w58 { width: 58mm; font-size: 11px; } .bill.w80 { width: 80mm; }
+.bill .c { text-align: center; } .bill .r { text-align: right; } .bill .b { font-weight: 700; }
+.bill hr { border: 0; border-top: 1px dashed #000; margin: 4px 0; }
+.bill table { width: 100%; border-collapse: collapse; } .bill td { padding: 1px 0; vertical-align: top; }
+.bill img { width: 70%; max-width: 46mm; margin: 0 auto 2px; display: block; filter: grayscale(1) contrast(1.4); }
+.qr-sheet { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10mm; padding: 8mm; }
+.qr-card { border: 2px dashed #3b512a; border-radius: 6mm; padding: 6mm; text-align: center; break-inside: avoid; font-family: 'Be Vietnam Pro', sans-serif; }
+.qr-card img.logo { height: 22mm; margin: 0 auto 2mm; }
+.qr-card .qr { display: flex; justify-content: center; margin: 3mm 0; }
