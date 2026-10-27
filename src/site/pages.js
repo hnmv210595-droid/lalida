@@ -6,7 +6,7 @@ import { getSettings } from '../api/store.js';
 import { ARTICLES } from './articles.js';
 
 const SITE = 'https://lalida.net';
-const ASSET_V = '20261027c';
+const ASSET_V = '20261027d';
 const CACHE_TTL = 300;
 // Giá trị mẫu trong seed.sql - chưa nhập thật thì không hiện ra trang công khai
 const PLACEHOLDERS = ['Địa chỉ quán', '0900 000 000'];
@@ -127,8 +127,11 @@ function layout(shop, { path, title, description, body, ld = [], type = 'website
       <a href="/" class="shrink-0" aria-label="Trang chủ ${esc(shop.name)}">
         <img src="/assets/logo.webp" alt="LaLiDa - Gà ba nuôi - Cơm mẹ nấu" width="283" height="256" class="h-14 sm:h-16 w-auto" />
       </a>
-      <nav class="hidden md:flex items-center gap-1 ml-2 text-sm font-semibold">${NAV.map(link('rounded-full px-3 py-1.5')).join('')}</nav>
-      <a href="/online" class="btn btn-primary ml-auto whitespace-nowrap">🛵 Đặt món online</a>
+      <a href="/online" class="shrink-0 flex flex-col leading-tight rounded-xl bg-clay-500 hover:bg-clay-600 text-white px-3 py-1.5 shadow-sm transition-colors">
+        <span class="font-bold text-sm whitespace-nowrap">🛵 Đặt cơm online</span>
+        <span class="text-[11px] whitespace-nowrap">Free ship nội thành Tam Kỳ</span>
+      </a>
+      <nav class="hidden md:flex items-center gap-1 ml-auto text-sm font-semibold">${NAV.map(link('rounded-full px-3 py-1.5')).join('')}</nav>
     </div>
     <nav class="md:hidden flex gap-1 overflow-x-auto no-scrollbar px-4 pb-2 text-sm font-semibold">${NAV.map(link('rounded-full px-3 py-1 whitespace-nowrap')).join('')}</nav>
   </header>
@@ -223,7 +226,8 @@ async function homePage(env) {
           <a href="/online" class="btn btn-primary !px-6 !py-3 !text-base">🍗 Xem thực đơn &amp; đặt món</a>
           ${shop.phone ? `<a href="tel:${esc(shop.phone.replace(/[^\d+]/g, ''))}" class="btn btn-ghost !px-6 !py-3 !text-base">📞 ${esc(shop.phone)}</a>` : ''}
         </div>
-        ${shop.address ? `<p class="mt-4 text-sm text-stone-600">📍 ${esc(shop.address)}${shop.hours ? ` · 🕒 ${esc(shop.hours)}` : ''}</p>` : ''}
+        <p class="mt-4 font-semibold text-brand-700">🛵 Free ship nội thành Tam Kỳ khi đặt cơm online</p>
+        ${shop.address ? `<p class="mt-2 text-sm text-stone-600">📍 ${esc(shop.address)}${shop.hours ? ` · 🕒 ${esc(shop.hours)}` : ''}</p>` : ''}
       </div>
       <img src="/assets/logo-lg.webp" alt="Logo LaLiDa - Gà ba nuôi, Cơm mẹ nấu - cơm gà Tam Kỳ" width="531" height="480" class="w-full max-w-md mx-auto h-auto" />
     </div>
@@ -267,7 +271,7 @@ async function homePage(env) {
     path: '/',
     title: 'Cơm gà Tam Kỳ LaLiDa - Gà ba nuôi, Cơm mẹ nấu | Đặt cơm gà online',
     description:
-      'LaLiDa - quán cơm gà Tam Kỳ: gà ta nhà nuôi, cơm vàng nấu nước luộc gà, gỏi gà rau răm, tương ớt. Xem thực đơn, gọi món bằng mã QR và đặt cơm gà online tại lalida.net.',
+      'LaLiDa - quán cơm gà Tam Kỳ: gà ta nhà nuôi, cơm vàng nấu nước luộc gà, gỏi gà rau răm, tương ớt. Đặt cơm gà online, free ship nội thành Tam Kỳ.',
     body,
     ld: [restaurantLd(shop), websiteLd],
   });
@@ -346,6 +350,7 @@ async function termsPage(env) {
       <h2>3. Đặt món online</h2>
       <ul>
         <li>Khi đặt online, bạn cần cung cấp <strong>họ tên, số điện thoại và địa chỉ</strong> chính xác để quán xác nhận và giao/chuẩn bị món.</li>
+        <li><strong>Miễn phí giao hàng (free ship) trong nội thành Tam Kỳ.</strong> Địa chỉ ngoài nội thành, quán sẽ báo phí giao hàng khi gọi xác nhận đơn.</li>
         <li>Đơn chỉ được chuẩn bị sau khi quán xác nhận. Quán có quyền từ chối hoặc huỷ đơn khi không liên hệ được với khách, thông tin không chính xác hoặc hết món.</li>
         <li>Để tránh đơn ảo, mỗi thiết bị/mạng chỉ được gửi số lượng đơn giới hạn trong một khoảng thời gian.</li>
       </ul>
