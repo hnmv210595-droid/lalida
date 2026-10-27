@@ -1,0 +1,8 @@
+# Cho phép Google và các công cụ tìm kiếm lập chỉ mục trang công khai của LaLiDa
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /order
+
+Sitemap: https://lalida.net/sitemap.xml

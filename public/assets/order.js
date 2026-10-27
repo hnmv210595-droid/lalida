@@ -37,7 +37,7 @@
       state.tableOk = true;
       $('table-badge').innerHTML = '🛵 Đặt online';
       $('welcome').textContent = 'Đặt món online - LaLiDa giao tận nơi! 🛵';
-      document.title = 'LaLiDa - Đặt online';
+      document.title = 'Đặt món online - Cơm gà Tam Kỳ LaLiDa';
       renderCart();
       if (state.ordering) {
         loadOrder();

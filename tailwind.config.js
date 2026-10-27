@@ -2,7 +2,7 @@
 // Chạy lại sau khi sửa giao diện: npm run build:css
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ['./public/**/*.html', './public/assets/**/*.js'],
+  content: ['./public/**/*.html', './public/assets/**/*.js', './src/site/**/*.js'],
   theme: {
     extend: {
       colors: {

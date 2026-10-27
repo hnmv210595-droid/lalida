@@ -159,6 +159,14 @@ Workflow **không** chạy `schema.sql` hay migration; thay đổi database vẫ
 
 ---
 
+## Trang chủ, bài viết & Google (SEO)
+
+- Trang công khai do `functions/` + `src/site/pages.js` dựng sẵn HTML (Google đọc được ngay): **Trang chủ** `/` (giới thiệu + thực đơn), **Về chúng tôi** `/ve-chung-toi`, **Điều khoản & điều kiện** `/dieu-khoan`, **Bài viết** `/bai-viet` (3 bài về cơm gà Tam Kỳ / cơm gà LaLiDa, nội dung ở `src/site/articles.js`).
+- Thông tin quán (địa chỉ, SĐT, email, giờ mở cửa, Facebook, Google Maps, giới thiệu) nhập ở **Quản trị → Cài đặt → Trang chủ & Google**; mục bỏ trống sẽ không hiện.
+- Có sẵn `robots.txt`, `/sitemap.xml`, thẻ mô tả, ảnh chia sẻ (`assets/og-image.jpg`) và dữ liệu có cấu trúc (Restaurant, BlogPosting) cho Google. Trang quản trị, API và trang gọi món theo bàn không cho Google lập chỉ mục.
+- Đưa web lên Google: vào [Google Search Console](https://search.google.com/search-console) → thêm `https://lalida.net` (kiểu "Tiền tố URL") → chọn xác minh bằng **Thẻ HTML** → dán thẻ vào ô **Mã xác minh Google Search Console** trong Cài đặt → Lưu → bấm Xác minh. Sau đó vào **Sơ đồ trang web** gửi `sitemap.xml`.
+- Logo/favicon: `assets/logo.webp`, `assets/logo-lg.webp`, `favicon.ico`, `assets/favicon.png`, `apple-touch-icon.png`, `assets/icon-512.png`.
+
 ## Chạy thử trên máy (local)
 
 ```bash

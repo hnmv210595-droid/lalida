@@ -8,6 +8,7 @@ import {
   getSettings, attachItems, getOrder, createTableOrder, prepareItems, insertItems, newAccessToken,
   computeTotals, vatPercent, calcPay,
 } from './store.js';
+import { purgeSitePages } from '../site/pages.js';
 
 const routes = [];
 // access: 'public' | 'admin' | 'finance' (finance = admin + mã PIN cấp 2)
@@ -27,6 +28,8 @@ const PUBLIC_SETTING_KEYS = [
 ];
 const EDITABLE_SETTING_KEYS = [
   'shop_name', 'shop_slogan', 'shop_address', 'shop_phone', 'public_base_url',
+  // Thông tin cho trang chủ / Về chúng tôi / Google
+  'shop_email', 'opening_hours', 'shop_facebook', 'shop_map_url', 'shop_intro', 'google_site_verification',
   'vat_enabled', 'vat_percent', 'paper_width', 'bill_footer',
   'customer_ordering', 'online_ordering', 'feedback_reward_enabled', 'vouchers_per_order', 'voucher_valid_days',
   'paid_leave_days', 'payday',
@@ -943,7 +946,16 @@ route('PUT', '/admin/settings', 'admin', async ({ env, body }) => {
       if (!/^https?:\/\/[^\s/]+$/.test(value.replace(/\/+$/, ''))) throw new HttpError(400, 'Tên miền không hợp lệ (vd: https://lalida.net)');
       value = value.replace(/\/+$/, '');
     }
-    if (value.length > 300) throw new HttpError(400, 'Giá trị cài đặt quá dài');
+    if ((key === 'shop_facebook' || key === 'shop_map_url') && value && !/^https:\/\/\S+$/.test(value)) {
+      throw new HttpError(400, 'Link Facebook / Google Maps phải bắt đầu bằng https://');
+    }
+    if (key === 'shop_email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new HttpError(400, 'Email không hợp lệ');
+    if (key === 'google_site_verification') {
+      // Cho phép dán cả thẻ <meta ... content="..."> từ Google Search Console: chỉ giữ lại mã
+      value = (/content="([^"]+)"/.exec(value)?.[1] ?? value).trim();
+      if (value && !/^[\w-]{10,100}$/.test(value)) throw new HttpError(400, 'Mã xác minh Google không hợp lệ');
+    }
+    if (value.length > (key === 'shop_intro' ? 1000 : 300)) throw new HttpError(400, 'Giá trị cài đặt quá dài');
     stmts.push(
       env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, value)
     );
@@ -1070,6 +1082,8 @@ export async function handle(request, env) {
 
     const params = Object.fromEntries(r.keys.map((k, i) => [k, Number(m[i + 1])]));
     const result = await r.handler({ request, env, url, params, body });
+    // Sửa Cài đặt / Thực đơn -> trang chủ, Về chúng tôi... hiện nội dung mới ngay (không chờ hết 5 phút lưu đệm)
+    if (method !== 'GET' && (path === '/admin/settings' || path.startsWith('/admin/menu'))) await purgeSitePages(url.origin);
     return result instanceof Response ? result : json(result);
   } catch (err) {
     if (err instanceof HttpError) return json({ error: err.message }, err.status);

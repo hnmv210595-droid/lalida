@@ -1,4 +1,3 @@
-# Trang chủ lalida.net -> Đặt online
-/  /online  302
+# Trang chủ lalida.net là trang giới thiệu (SEO) do functions/index.js dựng; nút "Đặt món online" dẫn tới /online
 # Đặt online dùng chung giao diện với trang gọi món tại bàn (order.html), order.js tự nhận chế độ theo đường dẫn
 /online  /order  200

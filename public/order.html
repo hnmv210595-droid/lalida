@@ -3,10 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>LaLiDa - Gọi món</title>
-  <meta name="description" content="LaLiDa - Gà ba nuôi, Cơm mẹ nấu. Quét QR gọi món tại bàn." />
+  <title>Thực đơn &amp; đặt món online - Cơm gà Tam Kỳ LaLiDa</title>
+  <meta name="description" content="Thực đơn cơm gà Tam Kỳ LaLiDa - Gà ba nuôi, Cơm mẹ nấu. Chọn món, đặt cơm gà online hoặc quét QR gọi món tại bàn." />
+  <link rel="canonical" href="https://lalida.net/online" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="LaLiDa" />
+  <meta property="og:locale" content="vi_VN" />
+  <meta property="og:title" content="Thực đơn &amp; đặt món online - Cơm gà Tam Kỳ LaLiDa" />
+  <meta property="og:description" content="Gà ba nuôi - Cơm mẹ nấu. Chọn món và đặt cơm gà Tam Kỳ online." />
+  <meta property="og:url" content="https://lalida.net/online" />
+  <meta property="og:image" content="https://lalida.net/assets/og-image.jpg" />
+  <meta name="twitter:card" content="summary_large_image" />
   <meta name="theme-color" content="#3b512a" />
-  <link rel="icon" href="/assets/favicon.png" />
+  <link rel="icon" href="/favicon.ico" sizes="48x48" />
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
   <!-- Gọi API thực đơn (kèm kiểm tra bàn) ngay khi trang bắt đầu tải, song song với việc tải script;
        order.js dùng lại kết quả này thay vì chờ script tải xong mới gọi -->
   <script>
@@ -24,14 +36,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <!-- CSS dựng sẵn bằng Tailwind CLI (npm run build:css) -->
-  <link rel="stylesheet" href="/assets/app.css?v=20261027b" />
+  <link rel="stylesheet" href="/assets/app.css?v=20261027c" />
 </head>
 <body class="bg-cream-50 text-stone-800 font-sans min-h-screen">
   <!-- HEADER: Logo LaLiDa + số bàn + danh mục -->
   <header class="sticky top-0 z-30 bg-cream-100/95 backdrop-blur border-b border-cream-200 shadow-sm">
     <div class="max-w-6xl mx-auto px-4 flex items-center gap-3 py-2">
       <a href="#" class="shrink-0" aria-label="LaLiDa">
-        <img src="/assets/logo.webp" alt="LaLiDa - Gà ba nuôi - Cơm mẹ nấu" class="h-14 sm:h-16 w-auto" />
+        <img src="/assets/logo.webp" alt="LaLiDa - Gà ba nuôi - Cơm mẹ nấu" width="283" height="256" class="h-14 sm:h-16 w-auto" />
       </a>
       <div class="ml-auto text-right">
         <div id="table-badge" class="inline-flex items-center gap-1.5 rounded-full bg-brand-700 text-white px-3 py-1.5 text-sm font-semibold">
@@ -182,8 +194,8 @@
     </form>
   </div>
 
-  <script src="/assets/common.js?v=20261027b"></script>
-  <script src="/assets/order.js?v=20261027b"></script>
+  <script src="/assets/common.js?v=20261027c"></script>
+  <script src="/assets/order.js?v=20261027c"></script>
   <!-- Dự phòng: nếu trình duyệt không chạy được order.js (quá cũ / lỗi tải) thì báo cho khách thay vì để trang trống -->
   <script>
     window.addEventListener('load', function () {

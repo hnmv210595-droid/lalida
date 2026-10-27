@@ -1368,6 +1368,15 @@
           ${field('shop_phone', 'Số điện thoại', 'maxlength="30"')}
           ${field('public_base_url', 'Tên miền dùng cho mã QR', 'placeholder="https://lalida.net"')}
           ${field('bill_footer', 'Lời chào cuối hoá đơn', 'maxlength="200"')}
+          <div class="rounded-xl bg-cream-100 p-3 space-y-2">
+            <div class="font-medium">Trang chủ & Google <span class="block text-xs font-normal text-stone-500">Hiện trên trang chủ, Về chúng tôi, Điều khoản và kết quả tìm kiếm Google. Bỏ trống mục nào thì mục đó không hiện.</span></div>
+            ${field('opening_hours', 'Giờ mở cửa', 'maxlength="60" placeholder="10:00 - 21:00"')}
+            ${field('shop_email', 'Email', 'type="email" maxlength="100"')}
+            ${field('shop_facebook', 'Link Facebook', 'maxlength="300" placeholder="https://facebook.com/..."')}
+            ${field('shop_map_url', 'Link Google Maps của quán', 'maxlength="300" placeholder="https://maps.app.goo.gl/..."')}
+            <div><label class="text-sm font-medium">Giới thiệu ngắn về quán</label><textarea name="shop_intro" rows="3" maxlength="1000" class="input mt-1" placeholder="Để trống: dùng đoạn giới thiệu mặc định về cơm gà Tam Kỳ LaLiDa">${esc(s.shop_intro || '')}</textarea></div>
+            ${field('google_site_verification', 'Mã xác minh Google Search Console', 'maxlength="300" placeholder="Dán thẻ meta hoặc mã content=..."')}
+          </div>
           <div><label class="text-sm font-medium">Khổ giấy in hoá đơn</label>
             <select name="paper_width" class="input mt-1">
               <option value="80" ${s.paper_width !== '58' ? 'selected' : ''}>80mm</option>
