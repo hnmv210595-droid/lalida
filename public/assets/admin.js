@@ -217,8 +217,18 @@
     if (j === S.lastOrdersJson || !$('orders-list')) return; // không đổi -> không vẽ lại
     S.lastOrdersJson = j;
     S.orders = orders;
+    // Đã thanh toán: tổng tiền trong ngày tách Chuyển khoản / Tiền mặt (để đối chiếu két tiền khi giao ca)
+    const sum = (m) => orders.filter((o) => (o.payment_method === 'transfer') === (m === 'transfer')).reduce((s, o) => s + o.total, 0);
+    const paidSummary =
+      S.orderMode === 'paid' && orders.length
+        ? `<div class="card p-3 col-span-full flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <span>💳 Chuyển khoản (CK): <b class="text-sky-700">${money(sum('transfer'))}</b></span>
+            <span>💵 Tiền mặt (TM): <b class="text-amber-700">${money(sum('cash'))}</b></span>
+            <span>Tổng: <b class="text-brand-800">${money(sum('transfer') + sum('cash'))}</b> · ${orders.length} đơn</span>
+          </div>`
+        : '';
     $('orders-list').innerHTML = orders.length
-      ? orders.map(S.orderMode === 'paid' ? paidOrderCard : openOrderCard).join('')
+      ? paidSummary + orders.map(S.orderMode === 'paid' ? paidOrderCard : openOrderCard).join('')
       : `<div class="text-stone-500 col-span-full">${{ open: 'Chưa có đơn nào đang phục vụ tại quán.', online: 'Chưa có đơn online nào.' }[S.orderMode] || 'Không có đơn đã thanh toán trong ngày này.'}</div>`;
   }
 
@@ -255,10 +265,11 @@
         ${o.vat_percent ? `<div class="flex justify-between"><span>VAT (${o.vat_percent}%)</span><span>${money(o.vat_amount)}</span></div>` : ''}
         <div class="flex justify-between font-bold text-base text-brand-800"><span>Tổng</span><span>${money(o.total)}</span></div>
       </div>
-      <div class="grid grid-cols-3 gap-2 mt-3">
+      <div class="grid grid-cols-2 gap-2 mt-3">
         <button data-order="${o.id}" data-act="serve" class="btn bg-emerald-600 hover:bg-emerald-700 text-white" ${waiting ? '' : 'disabled'}>Đã lên món</button>
         <button data-order="${o.id}" data-act="print" class="btn btn-ghost">🖨️ In</button>
-        <button data-order="${o.id}" data-act="pay" class="btn btn-accent">Đã thanh toán</button>
+        <button data-order="${o.id}" data-act="pay" data-method="transfer" class="btn bg-sky-600 hover:bg-sky-700 text-white">💳 Đã thanh toán (CK)</button>
+        <button data-order="${o.id}" data-act="pay" data-method="cash" class="btn btn-accent">💵 Đã thanh toán (TM)</button>
       </div>
       <div class="grid ${online ? 'grid-cols-1' : 'grid-cols-2'} gap-2 mt-2">
         ${online ? '' : `<button data-order="${o.id}" data-act="add" class="btn btn-ghost">＋ Thêm món</button>`}
@@ -310,7 +321,7 @@
           await printOrder(order);
           return;
         } else if (act === 'pay') {
-          return openPayModal(order);
+          return openPayModal(order, orderBtn.dataset.method);
         } else if (act === 'add') {
           return openCounterOrder(order.table_number, order.id);
         } else if (act === 'voucher') {
@@ -342,41 +353,35 @@
     }
   }
 
-  function openPayModal(order) {
+  const PAY_SHORT = { transfer: 'CK', cash: 'TM' };
+  // method: 'transfer' (nút Đã thanh toán (CK)) hoặc 'cash' (nút Đã thanh toán (TM))
+  function openPayModal(order, method) {
+    const cash = method === 'cash';
     openModal(
-      `Thanh toán - ${orderLabel(order)}`,
+      `${cash ? '💵 Tiền mặt' : '💳 Chuyển khoản'} - ${orderLabel(order)}`,
       `<form id="pay-form" class="space-y-4">
         <div class="rounded-xl bg-cream-100 p-4 text-sm space-y-1">
           <div class="flex justify-between"><span>Tạm tính</span><span>${money(order.subtotal)}</span></div>
           ${order.vat_percent ? `<div class="flex justify-between"><span>VAT (${order.vat_percent}%)</span><span>${money(order.vat_amount)}</span></div>` : ''}
           <div class="flex justify-between font-bold text-xl text-brand-800 pt-1"><span>Khách cần trả</span><span>${money(order.total)}</span></div>
         </div>
-        <div>
-          <div class="text-sm font-medium mb-2">Hình thức thanh toán</div>
-          <div class="grid grid-cols-3 gap-2">
-            ${Object.entries(P.PAY_LABEL)
-              .map(([k, v], i) => `<label class="border rounded-lg p-2 text-center text-sm cursor-pointer has-[:checked]:bg-brand-700 has-[:checked]:text-white">
-                <input type="radio" name="payment_method" value="${k}" class="sr-only" ${i === 0 ? 'checked' : ''}/>${v}</label>`)
-              .join('')}
-          </div>
-        </div>
-        <div>
+        ${cash ? `<div>
           <label class="text-sm font-medium">Khách đưa (tính tiền thừa)</label>
           <input id="cash-given" type="number" min="0" step="1000" class="input mt-1" placeholder="${order.total}" />
           <div id="change" class="text-sm text-stone-600 mt-1"></div>
-        </div>
+        </div>` : '<p class="text-sm text-stone-600">Kiểm tra đã nhận đủ tiền chuyển khoản trước khi xác nhận.</p>'}
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="print" checked /> In hoá đơn sau khi thanh toán</label>
-        <button class="btn btn-accent w-full py-3">Xác nhận đã thanh toán ${money(order.total)}</button>
+        <button class="btn ${cash ? 'btn-accent' : 'bg-sky-600 hover:bg-sky-700 text-white'} w-full py-3">Xác nhận đã thanh toán (${PAY_SHORT[method]}) ${money(order.total)}</button>
       </form>`,
       (root) => {
-        root.querySelector('#cash-given').addEventListener('input', (e) => {
+        root.querySelector('#cash-given')?.addEventListener('input', (e) => {
           const diff = Number(e.target.value) - order.total;
           root.querySelector('#change').textContent = e.target.value ? (diff >= 0 ? `Tiền thừa trả khách: ${money(diff)}` : `Còn thiếu: ${money(-diff)}`) : '';
         });
         onSubmit(root.querySelector('#pay-form'), async (d) => {
-          const { order: paid } = await call(`/admin/orders/${order.id}/pay`, { method: 'POST', body: { payment_method: d.payment_method } });
+          const { order: paid } = await call(`/admin/orders/${order.id}/pay`, { method: 'POST', body: { payment_method: method } });
           closeModal();
-          toast(`${orderLabel(order)} đã thanh toán ${money(paid.total)}`);
+          toast(`${orderLabel(order)} đã thanh toán (${PAY_SHORT[method]}) ${money(paid.total)}`);
           S.lastOrdersJson = '';
           loadOrders();
           pollTick();
@@ -801,6 +806,10 @@
             <div><label class="text-sm font-medium">Hạng mục *</label><input name="category" required maxlength="50" list="txn-cats" class="input mt-1" placeholder="VD: Nguyên liệu" />
               <datalist id="txn-cats">${['Nguyên liệu', 'Gà', 'Gạo', 'Rau củ', 'Gas', 'Điện nước', 'Mặt bằng', 'Lương nhân viên', 'Bao bì', 'Sửa chữa', 'Bán hàng', 'Thu khác'].map((c) => `<option value="${c}">`).join('')}</datalist></div>
             <div><label class="text-sm font-medium">Số tiền (đ) *</label><input name="amount" type="number" min="0" step="1000" required class="input mt-1" /></div>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="border rounded-lg p-2 text-center text-sm cursor-pointer has-[:checked]:bg-amber-600 has-[:checked]:text-white"><input type="radio" name="payment_method" value="cash" class="sr-only" checked />💵 Tiền mặt (TM)</label>
+              <label class="border rounded-lg p-2 text-center text-sm cursor-pointer has-[:checked]:bg-sky-600 has-[:checked]:text-white"><input type="radio" name="payment_method" value="transfer" class="sr-only" />💳 Chuyển khoản (CK)</label>
+            </div>
             <div><label class="text-sm font-medium">Ngày</label><input name="txn_date" type="date" value="${vnToday()}" class="input mt-1" /></div>
             <div><label class="text-sm font-medium">Diễn giải</label><input name="description" maxlength="300" class="input mt-1" /></div>
             <button class="btn btn-primary w-full">Lưu</button>
@@ -885,6 +894,17 @@
       rep.by_category.filter((c) => c.type === type).map((c) => `<div class="flex justify-between py-1"><span>${esc(c.category)}</span><span class="font-medium">${money(c.amount)}</span></div>`).join('') ||
       '<div class="text-stone-400">Không có</div>';
 
+    // Thu / Chi / Còn lại tách theo Chuyển khoản (CK) và Tiền mặt (TM)
+    const t = rep.totals;
+    const methodBox = (label, m, cls) => `<div class="card p-4 text-sm">
+        <div class="font-bold ${cls}">${label}</div>
+        <div class="grid grid-cols-3 gap-2 mt-2">
+          <div><div class="text-xs text-stone-500">Thu</div><div class="font-semibold text-emerald-700">${money(t[`income_${m}`])}</div></div>
+          <div><div class="text-xs text-stone-500">Chi</div><div class="font-semibold text-red-600">${money(t[`expense_${m}`])}</div></div>
+          <div><div class="text-xs text-stone-500">Còn lại</div><div class="font-bold ${cls}">${money(t[`income_${m}`] - t[`expense_${m}`])}</div></div>
+        </div>
+      </div>`;
+    const split = (r, k) => `<div class="text-[11px] text-stone-500 whitespace-nowrap">CK ${money(r[`${k}_transfer`])} · TM ${money(r[`${k}_cash`])}</div>`;
     $('fin-report').innerHTML = `
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
         ${box('Doanh thu (Thu)', money(rep.totals.income), 'text-emerald-700')}
@@ -892,12 +912,16 @@
         ${box(rep.totals.profit >= 0 ? 'Lợi nhuận (Lãi)' : 'Lợi nhuận (Lỗ)', money(rep.totals.profit), rep.totals.profit >= 0 ? 'text-brand-800' : 'text-red-700')}
         ${box('Đơn đã thanh toán', `${rep.paid_orders} đơn`, 'text-stone-800')}
       </div>
+      <div class="grid sm:grid-cols-2 gap-3 mt-3">
+        ${methodBox('💳 Chuyển khoản (CK)', 'transfer', 'text-sky-700')}
+        ${methodBox('💵 Tiền mặt (TM)', 'cash', 'text-amber-700')}
+      </div>
       <div class="card p-4 mt-4"><h3 class="font-bold text-brand-800 mb-2">Biểu đồ theo ${periodLabel.toLowerCase()}</h3><div class="h-72"><canvas id="fin-chart"></canvas></div></div>
       <div class="grid md:grid-cols-[1fr_1fr_1fr] gap-4 mt-4">
         <div class="card p-4 overflow-x-auto md:col-span-1">
           <h3 class="font-bold text-brand-800 mb-2">Chi tiết theo ${periodLabel.toLowerCase()}</h3>
           <table class="tbl w-full text-sm"><thead><tr><th>${periodLabel}</th><th class="text-right">Thu</th><th class="text-right">Chi</th><th class="text-right">Lãi/Lỗ</th></tr></thead>
-          <tbody>${rep.series.map((r) => `<tr><td>${fmtPeriod(r.period)}</td><td class="text-right">${money(r.income)}</td><td class="text-right">${money(r.expense)}</td><td class="text-right font-semibold ${r.profit < 0 ? 'text-red-600' : 'text-brand-800'}">${money(r.profit)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-stone-400">Chưa có dữ liệu</td></tr>'}</tbody></table>
+          <tbody>${rep.series.map((r) => `<tr><td>${fmtPeriod(r.period)}</td><td class="text-right">${money(r.income)}${split(r, 'income')}</td><td class="text-right">${money(r.expense)}${split(r, 'expense')}</td><td class="text-right font-semibold ${r.profit < 0 ? 'text-red-600' : 'text-brand-800'}">${money(r.profit)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-stone-400">Chưa có dữ liệu</td></tr>'}</tbody></table>
         </div>
         <div class="card p-4 text-sm"><h3 class="font-bold text-emerald-700 mb-2">Thu theo hạng mục</h3>${cat('income')}</div>
         <div class="card p-4 text-sm"><h3 class="font-bold text-red-600 mb-2">Chi theo hạng mục</h3>${cat('expense')}</div>
@@ -923,10 +947,11 @@
     }
 
     $('txn-list').innerHTML = transactions.length
-      ? `<table class="tbl w-full min-w-[520px]"><thead><tr><th>Ngày</th><th>Hạng mục</th><th>Diễn giải</th><th class="text-right">Số tiền</th><th></th></tr></thead><tbody>
+      ? `<table class="tbl w-full min-w-[520px]"><thead><tr><th>Ngày</th><th>Hạng mục</th><th>Diễn giải</th><th>CK/TM</th><th class="text-right">Số tiền</th><th></th></tr></thead><tbody>
         ${transactions
           .map(
             (t) => `<tr><td class="whitespace-nowrap">${t.txn_date.split('-').reverse().join('/')}</td><td>${esc(t.category)}</td><td class="text-stone-500">${esc(t.description || '')}</td>
+          <td><span class="text-xs rounded-full px-2 py-0.5 ${t.payment_method === 'transfer' ? 'bg-sky-50 text-sky-700' : 'bg-amber-50 text-amber-700'}">${PAY_SHORT[t.payment_method] || 'TM'}</span></td>
           <td class="text-right font-semibold whitespace-nowrap ${t.type === 'income' ? 'text-emerald-700' : 'text-red-600'}">${t.type === 'income' ? '+' : '−'}${money(t.amount)}</td>
           <td class="text-right"><button data-del-txn="${t.id}" class="text-xs text-red-600 hover:underline">Xoá</button></td></tr>`
           )
@@ -1258,12 +1283,27 @@
         (b.onclick = () => {
           const r = data.rows.find((x) => x.staff_id === Number(b.dataset.payConfirm));
           const body = inputs(b.dataset.payConfirm);
-          if (!confirm(`Xác nhận đã trả lương tháng ${fmtMonth(data.month)} cho ${r.full_name}?`)) return;
-          run(b, async () => {
-            await financeCall('/finance/payroll', { method: 'PUT', body });
-            await financeCall('/finance/payroll/pay', { method: 'POST', body: { month: data.month, staff_id: body.staff_id } });
-            toast(`Đã trả lương cho ${r.full_name}`);
-          });
+          // Chọn trả lương bằng Chuyển khoản hay Tiền mặt -> khoản chi lương ghi đúng loại trong sổ thu chi
+          openModal(
+            `Trả lương tháng ${fmtMonth(data.month)}`,
+            `<p class="text-sm">Xác nhận đã trả lương cho <b>${esc(r.full_name)}</b>: <b>${money(r.total)}</b></p>
+             <div class="grid grid-cols-2 gap-2 mt-4">
+               <button data-salary="transfer" class="btn bg-sky-600 hover:bg-sky-700 text-white py-3">💳 Đã trả (CK)</button>
+               <button data-salary="cash" class="btn btn-accent py-3">💵 Đã trả (TM)</button>
+             </div>`,
+            (root) =>
+              root.querySelectorAll('[data-salary]').forEach(
+                (mb) =>
+                  (mb.onclick = () => {
+                    closeModal();
+                    run(b, async () => {
+                      await financeCall('/finance/payroll', { method: 'PUT', body });
+                      await financeCall('/finance/payroll/pay', { method: 'POST', body: { month: data.month, staff_id: body.staff_id, payment_method: mb.dataset.salary } });
+                      toast(`Đã trả lương (${PAY_SHORT[mb.dataset.salary]}) cho ${r.full_name}`);
+                    });
+                  })
+              )
+          );
         })
     );
     box.querySelectorAll('[data-pay-revert]').forEach(

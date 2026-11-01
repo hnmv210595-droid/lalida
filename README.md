@@ -43,6 +43,7 @@ lalida/
 - **Góp ý nhận quà**: khách đang dùng bữa (bàn có đơn đang mở) viết góp ý sẽ nhận mã `LLD-XXXXXX` tặng 1 ly nước cho **lần ăn sau** (mã hiện trên điện thoại khách, có hạn dùng; mặc định 1 mã/lượt ăn của bàn, 30 ngày).
 - **Nhiều nhóm khách chung một bàn**: mỗi điện thoại quét QR có đơn riêng, đánh số **Bàn 1-1, Bàn 1-2, Bàn 1-3…**; mỗi khách chỉ xem/sửa đơn của mình. Khi các đơn của bàn đã thanh toán hết, số thứ tự bắt đầu lại từ 1. Nhân viên gọi món hộ thì chọn "Khách mới" hoặc thêm vào đơn Bàn X-n có sẵn.
   Nâng cấp database đã có dữ liệu: `npx wrangler d1 execute lalida-db --remote --file=./migrations/0004_table_guests.sql`
+  Tách thu chi Chuyển khoản / Tiền mặt: `npx wrangler d1 execute lalida-db --remote --file=./migrations/0005_payment_method.sql`
 
 **Đặt online** (`lalida.net/online`, trang chủ `lalida.net` cũng chuyển về đây)
 - Giống trang quét QR: trang chính có **Menu** và **Góp ý & Phản hồi**; khách chọn món rồi bấm **Đặt đơn** → hiện form **Tên, SĐT, Địa chỉ** → Xác nhận đặt đơn. Thông tin được nhớ cho lần đặt sau.
@@ -54,7 +55,7 @@ lalida/
 
 **Quản trị** (`/admin`)
 - Đăng nhập bằng mật khẩu; **Thu chi & Lợi nhuận** yêu cầu thêm **mã PIN cấp 2** (phiên 30 phút, có nút khoá lại). Sai 5 lần sẽ bị khoá 15 phút.
-- **Đơn hàng & Bếp (KDS)**: đơn realtime (polling 4 giây, chuông báo món mới), nút *Làm / Lên món* từng món, **Đã lên món**, **Đã thanh toán** (chọn tiền mặt/chuyển khoản/thẻ, tính tiền thừa, tự ghi khoản thu), huỷ món/đơn, tạo đơn / thêm món cho bàn, xem đơn đã thanh toán theo ngày.
+- **Đơn hàng & Bếp (KDS)**: đơn realtime (polling 4 giây, chuông báo món mới), nút *Làm / Lên món* từng món, **Đã lên món**, hai nút **Đã thanh toán (CK)** (chuyển khoản) và **Đã thanh toán (TM)** (tiền mặt, tính tiền thừa), tự ghi khoản thu đúng loại CK/TM; tab Đã thanh toán hiện tổng CK / TM trong ngày, huỷ món/đơn, tạo đơn / thêm món cho bàn, xem đơn đã thanh toán theo ngày.
 - **🎁 Mã tặng nước**: trên đơn của bàn, nhập mã khách đưa → chọn ly nước bất kỳ trong mục Đồ Uống → món được thêm vào hoá đơn giá 0đ và gửi xuống bếp. Mã chỉ dùng 1 lần, không dùng được ngay trong lượt ăn đã góp ý; huỷ món tặng thì mã được trả lại.
 - **In hoá đơn** khổ 58mm/80mm qua `window.print()` hoặc máy in nhiệt **Bluetooth (Web Bluetooth, ESC/POS)**.
 - **Bàn & QR**: thêm/xoá bàn, QR tự sinh `https://lalida.net/order?table=X`, in từng mã hoặc cả tờ.

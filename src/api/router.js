@@ -71,7 +71,8 @@ function voucherCode() {
 }
 const addDays = (date, n) => new Date(Date.parse(date) + n * 86400000).toISOString().slice(0, 10);
 const ITEM_STATUSES = ['pending', 'cooking', 'served', 'cancelled'];
-const PAYMENT_METHODS = ['cash', 'transfer', 'card'];
+// Tiền mặt (TM) / Chuyển khoản (CK) - dùng cho thanh toán đơn, trả lương và sổ thu chi
+const PAYMENT_METHODS = ['cash', 'transfer'];
 
 // =============================================================
 // KHÁCH HÀNG (không cần đăng nhập)
@@ -412,7 +413,7 @@ route('POST', '/admin/orders/:id/serve', 'admin', async ({ env, params }) => {
 
 // Nút "Đã thanh toán": chốt tiền (kèm VAT), đóng đơn, tự ghi khoản thu
 route('POST', '/admin/orders/:id/pay', 'admin', async ({ env, params, body }) => {
-  const method = oneOf(body.payment_method || 'cash', PAYMENT_METHODS, 'Hình thức thanh toán');
+  const method = oneOf(body.payment_method, PAYMENT_METHODS, 'Hình thức thanh toán');
   await requireOpenOrder(env, params.id);
   const { results: items } = await env.DB.prepare('SELECT price, quantity, status FROM order_items WHERE order_id = ?')
     .bind(params.id)
@@ -427,9 +428,9 @@ route('POST', '/admin/orders/:id/pay', 'admin', async ({ env, params, body }) =>
   if (res.meta.changes !== 1) throw new HttpError(409, 'Đơn hàng đã được thanh toán');
   const order = await getOrder(env, params.id);
   await env.DB.prepare(
-    "INSERT INTO transactions (type, category, amount, description, txn_date, order_id) VALUES ('income', 'Bán hàng', ?, ?, ?, ?)"
+    "INSERT INTO transactions (type, category, amount, description, txn_date, order_id, payment_method) VALUES ('income', 'Bán hàng', ?, ?, ?, ?, ?)"
   )
-    .bind(t.total, `Đơn #${order.id} - Bàn ${order.table_number}`, vnToday(), order.id)
+    .bind(t.total, `Đơn #${order.id} - ${order.order_type === 'online' ? 'Đơn online' : `Bàn ${order.table_number}${order.guest_no ? `-${order.guest_no}` : ''}`}`, vnToday(), order.id, method)
     .run();
   return { order };
 });
@@ -824,13 +825,14 @@ route('PUT', '/finance/payroll', 'finance', async ({ env, body }) => {
 route('POST', '/finance/payroll/pay', 'finance', async ({ env, body }) => {
   const { ctx, staff, saved } = await loadPayrollInput(env, body);
   const row = buildPayrollRow(ctx, staff, saved, (await attendanceStats(env, ctx.month)).get(staff.id));
+  const method = oneOf(body.payment_method, PAYMENT_METHODS, 'Hình thức trả lương');
   const res = await payrollUpsert(env, row, 'paid').run();
   if (!res.meta.changes) throw new HttpError(409, 'Đã trả lương tháng này');
   const [y, m] = ctx.month.split('-');
   const txn = await env.DB.prepare(
-    "INSERT INTO transactions (type, category, amount, description, txn_date) VALUES ('expense', 'Lương nhân viên', ?, ?, ?)"
+    "INSERT INTO transactions (type, category, amount, description, txn_date, payment_method) VALUES ('expense', 'Lương nhân viên', ?, ?, ?, ?)"
   )
-    .bind(row.total, `Lương tháng ${m}/${y} - ${staff.full_name}`, vnToday())
+    .bind(row.total, `Lương tháng ${m}/${y} - ${staff.full_name}`, vnToday(), method)
     .run();
   await env.DB.prepare('UPDATE payroll SET transaction_id = ? WHERE staff_id = ? AND month = ?')
     .bind(txn.meta.last_row_id, staff.id, ctx.month)
@@ -985,18 +987,19 @@ function txnFields(body) {
     int(body.amount, { min: 0, max: 100000000000, name: 'Số tiền' }),
     str(body.description, { max: 300, name: 'Diễn giải' }),
     dateStr(body.txn_date || vnToday()),
+    oneOf(body.payment_method || 'cash', PAYMENT_METHODS, 'Hình thức (CK/TM)'),
   ];
 }
 
 route('POST', '/finance/transactions', 'finance', async ({ env, body }) => {
-  await env.DB.prepare('INSERT INTO transactions (type, category, amount, description, txn_date) VALUES (?, ?, ?, ?, ?)')
+  await env.DB.prepare('INSERT INTO transactions (type, category, amount, description, txn_date, payment_method) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(...txnFields(body))
     .run();
   return { ok: true };
 });
 
 route('PUT', '/finance/transactions/:id', 'finance', async ({ env, params, body }) => {
-  await env.DB.prepare('UPDATE transactions SET type = ?, category = ?, amount = ?, description = ?, txn_date = ? WHERE id = ?')
+  await env.DB.prepare('UPDATE transactions SET type = ?, category = ?, amount = ?, description = ?, txn_date = ?, payment_method = ? WHERE id = ?')
     .bind(...txnFields(body), params.id)
     .run();
   return { ok: true };
@@ -1020,7 +1023,11 @@ route('GET', '/finance/report', 'finance', async ({ env, url }) => {
     env.DB.prepare(
       `SELECT substr(txn_date, 1, ${len}) AS period,
          SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS income,
-         SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS expense
+         SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS expense,
+         SUM(CASE WHEN type = 'income' AND payment_method = 'transfer' THEN amount ELSE 0 END) AS income_transfer,
+         SUM(CASE WHEN type = 'income' AND payment_method <> 'transfer' THEN amount ELSE 0 END) AS income_cash,
+         SUM(CASE WHEN type = 'expense' AND payment_method = 'transfer' THEN amount ELSE 0 END) AS expense_transfer,
+         SUM(CASE WHEN type = 'expense' AND payment_method <> 'transfer' THEN amount ELSE 0 END) AS expense_cash
        FROM transactions WHERE txn_date BETWEEN ? AND ? GROUP BY 1 ORDER BY 1`
     ).bind(from, to),
     env.DB.prepare(
@@ -1033,10 +1040,9 @@ route('GET', '/finance/report', 'finance', async ({ env, url }) => {
     ).bind(from, to),
   ]);
   const series = rows.results.map((r) => ({ ...r, profit: r.income - r.expense }));
-  const totals = series.reduce(
-    (t, r) => ({ income: t.income + r.income, expense: t.expense + r.expense, profit: t.profit + r.profit }),
-    { income: 0, expense: 0, profit: 0 }
-  );
+  // Tổng chung + tách Chuyển khoản (transfer) / Tiền mặt (cash)
+  const KEYS = ['income', 'expense', 'profit', 'income_transfer', 'income_cash', 'expense_transfer', 'expense_cash'];
+  const totals = Object.fromEntries(KEYS.map((k) => [k, series.reduce((sum, r) => sum + r[k], 0)]));
   return { period, from, to, series, totals, by_category: cats.results, ...orders.results[0] };
 });
 

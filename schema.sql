@@ -109,6 +109,7 @@ CREATE TABLE transactions (
   description TEXT,
   txn_date    TEXT NOT NULL,
   order_id    INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+  payment_method TEXT NOT NULL DEFAULT 'cash',     -- 'cash' = Tiền mặt (TM), 'transfer' = Chuyển khoản (CK)
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_transactions_date ON transactions(txn_date);
