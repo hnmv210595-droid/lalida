@@ -77,6 +77,7 @@
   // ================= CHUÔNG BÁO ĐƠN MỚI =================
   // Âm thanh trong trang: điện thoại chỉ cho phát sau lần chạm đầu tiên -> mở khoá ở lần chạm/bấm phím đầu tiên.
   let audioCtx = null;
+  let speechReady = false;
   function unlockAudio() {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -84,32 +85,79 @@
     } catch {
       /* trình duyệt không hỗ trợ âm thanh */
     }
+    // iPhone/Android chỉ cho đọc giọng nói sau một lần chạm: đọc câu rỗng để mở khoá
+    if (!speechReady && window.speechSynthesis) {
+      speechReady = true;
+      speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+    }
+  }
+
+  // Giọng đọc tiếng Việt có sẵn trên máy (Android: Google, iPhone: Linh, Windows/Edge: HoaiMy...)
+  const viVoice = () => (window.speechSynthesis ? speechSynthesis.getVoices().find((v) => /^vi([-_]|$)/i.test(v.lang)) : null);
+  window.speechSynthesis?.getVoices(); // một số trình duyệt nạp danh sách giọng chậm -> gọi trước
+  const ALERT_KEY = 'lalida_alert_mode'; // 'voice' (mặc định) | 'bell' - chọn riêng trên từng máy
+  const alertMode = () => storage.get(ALERT_KEY, 'voice');
+
+  function speak(text) {
+    const voice = viVoice();
+    if (!voice) return false;
+    speechSynthesis.cancel();
+    // Đọc 2 lần cho dễ nghe khi quán ồn
+    [0, 1].forEach(() => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = voice.lang;
+      try {
+        u.voice = voice;
+      } catch {
+        /* một số trình duyệt không nhận đối tượng giọng: vẫn đọc theo ngôn ngữ vi-VN */
+      }
+      u.volume = 1;
+      u.rate = 0.9;
+      speechSynthesis.speak(u);
+    });
+    return true;
+  }
+
+  // Báo đơn mới: giọng nói "Có đơn mới" (kèm 1 tiếng chuông ngắn để gây chú ý); máy không có giọng
+  // tiếng Việt hoặc đã chọn kiểu Chuông -> chuông to 3 lượt
+  function alertNewOrder(kind = 'table') {
+    if (alertMode() === 'voice' && viVoice()) {
+      beep(kind, 1);
+      setTimeout(() => speak(kind === 'online' ? 'Có đơn online mới' : 'Có đơn mới'), 700);
+    } else {
+      beep(kind, 3);
+    }
+    navigator.vibrate?.([400, 150, 400, 150, 400]);
   }
   ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => document.addEventListener(ev, unlockAudio, { passive: true }));
 
   // 'table': "ting-tong" x2 · 'online': 3 nốt đi lên x2 (nghe là biết đơn giao hàng)
-  function beep(kind = 'table') {
+  function beep(kind = 'table', rounds = 3) {
     unlockAudio();
     if (!audioCtx) return;
     const notes = kind === 'online' ? [659, 784, 1047] : [988, 784];
-    const step = 0.22;
+    const step = 0.25;
     const now = audioCtx.currentTime + 0.05;
-    [0, 1].forEach((round) =>
+    // Bộ nén giúp tiếng to hơn mà không bị rè
+    const out = audioCtx.createDynamicsCompressor();
+    out.threshold.value = -30;
+    out.ratio.value = 12;
+    out.connect(audioCtx.destination);
+    Array.from({ length: rounds }, (_, r) => r).forEach((round) =>
       notes.forEach((freq, i) => {
         const t = now + round * (notes.length * step + 0.35) + i * step;
         const o = audioCtx.createOscillator();
         const g = audioCtx.createGain();
-        o.type = 'triangle';
+        o.type = 'square';
         o.frequency.value = freq;
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.9, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(1, t + 0.02);
         g.gain.exponentialRampToValueAtTime(0.001, t + step * 1.6);
-        o.connect(g).connect(audioCtx.destination);
+        o.connect(g).connect(out);
         o.start(t);
         o.stop(t + step * 1.7);
       })
     );
-    navigator.vibrate?.([300, 120, 300]);
   }
 
   // Trang đang ở tab khác: nhấp nháy tiêu đề để dễ thấy
@@ -194,7 +242,15 @@
           <span class="text-xs text-stone-500">Số máy đang nhận thông báo: ${devices}</span>
         </div>
         ${iosHint}
-        <p>Khi bật, máy sẽ <b>kêu và rung</b> mỗi khi khách đặt đơn (quét QR tại bàn hoặc đặt online), <b>kể cả khi tắt màn hình hoặc đã đóng trang</b>.</p>
+        <div>
+          <div class="font-medium mb-2">Kiểu báo khi đang mở trang quản trị (máy này)</div>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="border rounded-lg p-2 text-center cursor-pointer has-[:checked]:bg-brand-700 has-[:checked]:text-white"><input type="radio" name="alert_mode" value="voice" class="sr-only" ${alertMode() === 'voice' ? 'checked' : ''} />🗣️ Giọng nói "Có đơn mới"</label>
+            <label class="border rounded-lg p-2 text-center cursor-pointer has-[:checked]:bg-brand-700 has-[:checked]:text-white"><input type="radio" name="alert_mode" value="bell" class="sr-only" ${alertMode() === 'bell' ? 'checked' : ''} />🔔 Chuông</label>
+          </div>
+          ${viVoice() || !window.speechSynthesis ? '' : '<p class="text-xs text-amber-700 mt-1">Máy này chưa có giọng đọc tiếng Việt nên sẽ dùng chuông. Android: Cài đặt → Quản lý chung → Chuyển văn bản thành giọng nói → cài tiếng Việt (Google). Windows: Cài đặt → Thời gian & ngôn ngữ → Giọng nói → thêm Tiếng Việt, hoặc dùng trình duyệt Edge.</p>'}
+        </div>
+        <p>Khi bật thông báo, máy sẽ <b>kêu và rung</b> mỗi khi khách đặt đơn (quét QR tại bàn hoặc đặt online), <b>kể cả khi tắt màn hình hoặc đã đóng trang</b>.</p>
         <div class="grid gap-2">
           ${on ? '' : '<button id="push-on" class="btn btn-accent py-3">🔔 Bật thông báo trên máy này</button>'}
           <button id="push-test" class="btn btn-ghost py-3">🔊 Thử chuông</button>
@@ -202,6 +258,7 @@
         </div>
         <ul class="text-xs text-stone-500 list-disc pl-5 space-y-1">
           <li>Mở âm lượng điện thoại, tắt chế độ im lặng / Không làm phiền để nghe chuông.</li>
+          <li>Giọng nói chỉ đọc khi trang quản trị đang mở trên màn hình. Khi tắt màn hình, máy báo bằng âm thông báo của điện thoại. Android: để to hơn, vào Cài đặt → Ứng dụng → Chrome → Thông báo → lalida.net → chọn âm thanh to / mức Khẩn cấp.</li>
           <li>Android: nếu không kêu khi tắt màn hình, vào Cài đặt → Pin → cho trình duyệt (Chrome) chạy nền không giới hạn.</li>
           <li>Máy tính: để trình duyệt (Chrome/Edge) luôn chạy; thông báo hiện ở góc màn hình kèm âm thanh.</li>
         </ul>
@@ -217,6 +274,12 @@
             }
             e.target.disabled = false;
           });
+        root.querySelectorAll('[name=alert_mode]').forEach((r) =>
+          r.addEventListener('change', () => {
+            storage.set(ALERT_KEY, r.value);
+            alertNewOrder('table');
+          })
+        );
         act('#push-on', async () => {
           await enablePush();
           toast('Đã bật thông báo trên máy này 🔔');
@@ -230,7 +293,7 @@
           openBellModal();
         });
         act('#push-test', async () => {
-          beep('online');
+          alertNewOrder('table');
           await call('/admin/push/test', { method: 'POST' });
           toast((await pushSubscription()) ? 'Đã gửi thông báo thử tới các máy đã bật chuông' : 'Chuông trong trang đang hoạt động. Bật thông báo để kêu cả khi tắt màn hình.');
         });
@@ -289,7 +352,7 @@
       // Món mới do khách gọi (món nhân viên tự thêm trên máy này thì không kêu: S.quiet)
       if (S.lastItemId !== null && S.summary.last_item_id > S.lastItemId && !S.quiet) {
         const online = S.summary.last_online_item_id > S.lastOnlineItemId;
-        beep(online ? 'online' : 'table');
+        alertNewOrder(online ? 'online' : 'table');
         toast(online ? '🛵 Có đơn online mới!' : '🔔 Có món mới được gọi!');
         flashTitle(online ? '🛵 ĐƠN ONLINE MỚI' : '🔔 CÓ MÓN MỚI');
       }
