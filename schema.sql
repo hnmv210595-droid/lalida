@@ -200,3 +200,11 @@ CREATE TABLE login_attempts (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_login_attempts ON login_attempts(ip, kind, created_at);
+
+-- Máy nhân viên nhận thông báo đẩy khi khách đặt đơn (chuông báo cả khi tắt màn hình)
+CREATE TABLE push_subscriptions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  endpoint   TEXT NOT NULL UNIQUE,
+  device     TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

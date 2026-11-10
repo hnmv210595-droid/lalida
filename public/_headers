@@ -24,3 +24,6 @@
   Cache-Control: public, max-age=604800
 /apple-touch-icon.png
   Cache-Control: public, max-age=604800
+# Service worker (chuông báo đơn mới): luôn lấy bản mới nhất
+/sw.js
+  Cache-Control: no-cache

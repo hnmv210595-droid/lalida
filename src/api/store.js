@@ -1,7 +1,7 @@
 // Truy vấn dùng chung: cài đặt, tính tiền (VAT), đơn hàng
 import { HttpError, int, str } from './http.js';
 
-const SECRET_KEYS = ['admin_password_hash', 'finance_pin_hash'];
+const SECRET_KEYS = ['admin_password_hash', 'finance_pin_hash', 'vapid_keys'];
 
 export async function getSettings(env) {
   const { results } = await env.DB.prepare('SELECT key, value FROM settings').all();

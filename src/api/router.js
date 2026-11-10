@@ -9,6 +9,7 @@ import {
   computeTotals, vatPercent, calcPay,
 } from './store.js';
 import { purgeSitePages } from '../site/pages.js';
+import { notifyStaff, vapidPublicKey } from './push.js';
 
 const routes = [];
 // access: 'public' | 'admin' | 'finance' (finance = admin + mã PIN cấp 2)
@@ -299,6 +300,43 @@ route('PUT', '/finance/pin', 'finance', async ({ env, body }) => {
 // =============================================================
 // ĐƠN HÀNG / BẾP (KDS) / THU NGÂN
 // =============================================================
+// ---------- THÔNG BÁO ĐẨY (chuông báo đơn mới trên điện thoại / máy tính nhân viên) ----------
+route('GET', '/admin/push/key', 'admin', async ({ env }) => {
+  const { n } = await env.DB.prepare('SELECT COUNT(*) AS n FROM push_subscriptions').first();
+  return { key: await vapidPublicKey(env), devices: n };
+});
+
+route('POST', '/admin/push/subscribe', 'admin', async ({ env, body }) => {
+  const endpoint = str(body.endpoint, { max: 1000, required: true, name: 'Địa chỉ nhận thông báo' });
+  if (!/^https:\/\/[^\s]+$/.test(endpoint)) throw new HttpError(400, 'Địa chỉ nhận thông báo không hợp lệ');
+  const device = str(body.device, { max: 60, name: 'Thiết bị' });
+  await env.DB.prepare('INSERT INTO push_subscriptions (endpoint, device) VALUES (?, ?) ON CONFLICT(endpoint) DO UPDATE SET device = excluded.device')
+    .bind(endpoint, device)
+    .run();
+  return { ok: true };
+});
+
+route('POST', '/admin/push/unsubscribe', 'admin', async ({ env, body }) => {
+  await env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(String(body.endpoint ?? '')).run();
+  return { ok: true };
+});
+
+route('POST', '/admin/push/test', 'admin', async ({ env, url }) => {
+  await notifyStaff(env, url.origin);
+  return { ok: true };
+});
+
+// Service worker hỏi nội dung để hiện thông báo: món được gọi gần nhất thuộc đơn nào
+route('GET', '/admin/notifications/latest', 'admin', async ({ env }) => {
+  const o = await env.DB.prepare(
+    `SELECT o.id, o.order_type, o.table_number, o.guest_no, o.customer_name, i.created_at,
+       (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = o.id AND status <> 'cancelled') AS quantity,
+       (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = o.id AND created_at = i.created_at AND status <> 'cancelled') AS batch
+     FROM order_items i JOIN orders o ON o.id = i.order_id ORDER BY i.id DESC LIMIT 1`
+  ).first();
+  return { order: o ?? null };
+});
+
 route('GET', '/admin/summary', 'admin', async ({ env }) => {
   const row = await env.DB.prepare(
     `SELECT
@@ -308,7 +346,8 @@ route('GET', '/admin/summary', 'admin', async ({ env }) => {
        (SELECT COUNT(*) FROM order_items i JOIN orders o ON o.id = i.order_id
           WHERE o.status = 'open' AND i.status IN ('pending','cooking')) AS waiting_items,
        (SELECT COUNT(*) FROM feedback WHERE is_read = 0) AS unread_feedback,
-       (SELECT COALESCE(MAX(id), 0) FROM order_items) AS last_item_id`
+       (SELECT COALESCE(MAX(id), 0) FROM order_items) AS last_item_id,
+       (SELECT COALESCE(MAX(i.id), 0) FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.order_type = 'online') AS last_online_item_id`
   ).first();
   // Nhắc trả lương: từ ngày trả lương (mặc định ngày 5), đếm nhân viên chưa được trả lương tháng trước
   const today = vnToday();
@@ -1049,7 +1088,7 @@ route('GET', '/finance/report', 'finance', async ({ env, url }) => {
 // =============================================================
 // ĐIỀU PHỐI
 // =============================================================
-export async function handle(request, env) {
+export async function handle(request, env, waitUntil = (p) => p) {
   try {
     if (!env.DB) throw new HttpError(500, 'Chưa gắn D1 database (binding "DB")');
     const url = new URL(request.url);
@@ -1088,6 +1127,10 @@ export async function handle(request, env) {
 
     const params = Object.fromEntries(r.keys.map((k, i) => [k, Number(m[i + 1])]));
     const result = await r.handler({ request, env, url, params, body });
+    // Khách đặt đơn / gọi thêm món -> báo chuông tới máy nhân viên (gửi sau khi trả kết quả cho khách)
+    if (method === 'POST' && (path === '/public/orders' || path === '/public/online-orders')) {
+      waitUntil(notifyStaff(env, url.origin).catch((e) => console.error('push', e)));
+    }
     // Sửa Cài đặt / Thực đơn -> trang chủ, Về chúng tôi... hiện nội dung mới ngay (không chờ hết 5 phút lưu đệm)
     if (method !== 'GET' && (path === '/admin/settings' || path.startsWith('/admin/menu'))) await purgeSitePages(url.origin);
     return result instanceof Response ? result : json(result);

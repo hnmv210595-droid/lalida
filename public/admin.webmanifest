@@ -1,0 +1,13 @@
+{
+  "name": "LaLiDa - Quản lý quán",
+  "short_name": "LaLiDa QL",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "background_color": "#fdfaf3",
+  "theme_color": "#3b512a",
+  "icons": [
+    { "src": "/assets/favicon.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

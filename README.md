@@ -55,6 +55,7 @@ lalida/
 
 **Quản trị** (`/admin`)
 - Đăng nhập bằng mật khẩu; **Thu chi & Lợi nhuận** yêu cầu thêm **mã PIN cấp 2** (phiên 30 phút, có nút khoá lại). Sai 5 lần sẽ bị khoá 15 phút.
+- **Chuông báo đơn mới** (nút 🔔 trên trang quản trị): chuông trong trang (đơn online kêu khác đơn tại bàn) + **thông báo đẩy** kêu và rung cả khi tắt màn hình / đóng trang, bật riêng trên từng điện thoại, máy tính. iPhone: thêm trang quản trị vào Màn hình chính rồi bật (iOS 16.4+). Nâng cấp database: `npx wrangler d1 execute lalida-db --remote --file=./migrations/0006_push_subscriptions.sql`
 - **Đơn hàng & Bếp (KDS)**: đơn realtime (polling 4 giây, chuông báo món mới), nút *Làm / Lên món* từng món, **Đã lên món**, hai nút **Đã thanh toán (CK)** (chuyển khoản) và **Đã thanh toán (TM)** (tiền mặt, tính tiền thừa), tự ghi khoản thu đúng loại CK/TM; tab Đã thanh toán hiện tổng CK / TM trong ngày, huỷ món/đơn, tạo đơn / thêm món cho bàn, xem đơn đã thanh toán theo ngày.
 - **🎁 Mã tặng nước**: trên đơn của bàn, nhập mã khách đưa → chọn ly nước bất kỳ trong mục Đồ Uống → món được thêm vào hoá đơn giá 0đ và gửi xuống bếp. Mã chỉ dùng 1 lần, không dùng được ngay trong lượt ăn đã góp ý; huỷ món tặng thì mã được trả lại.
 - **In hoá đơn** khổ 58mm/80mm qua `window.print()` hoặc máy in nhiệt **Bluetooth (Web Bluetooth, ESC/POS)**.

@@ -74,23 +74,170 @@
     });
   }
 
-  function beep() {
+  // ================= CHUÔNG BÁO ĐƠN MỚI =================
+  // Âm thanh trong trang: điện thoại chỉ cho phát sau lần chạm đầu tiên -> mở khoá ở lần chạm/bấm phím đầu tiên.
+  let audioCtx = null;
+  function unlockAudio() {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [0, 0.25].forEach((t) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.frequency.value = 880;
-        g.gain.setValueAtTime(0.25, ctx.currentTime + t);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
-        o.connect(g).connect(ctx.destination);
-        o.start(ctx.currentTime + t);
-        o.stop(ctx.currentTime + t + 0.2);
-      });
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
     } catch {
-      /* trình duyệt chặn âm thanh */
+      /* trình duyệt không hỗ trợ âm thanh */
     }
   }
+  ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => document.addEventListener(ev, unlockAudio, { passive: true }));
+
+  // 'table': "ting-tong" x2 · 'online': 3 nốt đi lên x2 (nghe là biết đơn giao hàng)
+  function beep(kind = 'table') {
+    unlockAudio();
+    if (!audioCtx) return;
+    const notes = kind === 'online' ? [659, 784, 1047] : [988, 784];
+    const step = 0.22;
+    const now = audioCtx.currentTime + 0.05;
+    [0, 1].forEach((round) =>
+      notes.forEach((freq, i) => {
+        const t = now + round * (notes.length * step + 0.35) + i * step;
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.9, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + step * 1.6);
+        o.connect(g).connect(audioCtx.destination);
+        o.start(t);
+        o.stop(t + step * 1.7);
+      })
+    );
+    navigator.vibrate?.([300, 120, 300]);
+  }
+
+  // Trang đang ở tab khác: nhấp nháy tiêu đề để dễ thấy
+  const baseTitle = document.title;
+  let titleTimer = null;
+  function flashTitle(text) {
+    if (!document.hidden) return;
+    clearInterval(titleTimer);
+    let on = false;
+    titleTimer = setInterval(() => (document.title = (on = !on) ? text : baseTitle), 1000);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    clearInterval(titleTimer);
+    document.title = baseTitle;
+    pollTick(); // điện thoại vừa mở lại màn hình -> cập nhật đơn ngay
+  });
+
+  // ---- Thông báo đẩy (Web Push): kêu cả khi tắt màn hình / đóng trang ----
+  const PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const STANDALONE = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+  const deviceName = () =>
+    IS_IOS ? 'iPhone/iPad' : /Android/.test(navigator.userAgent) ? 'Android' : /Windows/.test(navigator.userAgent) ? 'Máy tính Windows' : /Mac/.test(navigator.userAgent) ? 'Máy Mac' : 'Thiết bị khác';
+
+  async function pushSubscription() {
+    if (!PUSH_OK) return null;
+    const reg = await navigator.serviceWorker.getRegistration('/admin');
+    return reg ? reg.pushManager.getSubscription() : null;
+  }
+
+  async function enablePush() {
+    if (!PUSH_OK) throw new Error(IS_IOS && !STANDALONE ? 'Trên iPhone cần thêm trang vào Màn hình chính trước (xem hướng dẫn bên dưới)' : 'Trình duyệt này không hỗ trợ thông báo đẩy');
+    if ((await Notification.requestPermission()) !== 'granted') throw new Error('Bạn đã chặn thông báo. Vào cài đặt trình duyệt → Quyền của trang → cho phép Thông báo, rồi thử lại.');
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/admin' });
+    await navigator.serviceWorker.ready;
+    const { key } = await call('/admin/push/key');
+    const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64url(key) }));
+    await call('/admin/push/subscribe', { method: 'POST', body: { endpoint: sub.endpoint, device: deviceName() } });
+  }
+
+  async function disablePush() {
+    const sub = await pushSubscription();
+    if (!sub) return;
+    await call('/admin/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }).catch(() => {});
+    await sub.unsubscribe();
+  }
+
+  // Mỗi lần mở trang: máy đã bật thì gửi lại địa chỉ nhận (phòng khi trình duyệt đổi địa chỉ)
+  async function syncPush() {
+    try {
+      if (PUSH_OK && Notification.permission === 'granted' && (await pushSubscription())) await enablePush();
+    } catch {
+      /* bỏ qua */
+    }
+    renderBell();
+  }
+
+  async function renderBell() {
+    const on = !!(await pushSubscription().catch(() => null));
+    $('bell-btn').innerHTML = on ? '🔔<span class="hidden sm:inline"> Chuông: Bật</span>' : '🔕<span class="hidden sm:inline"> Bật chuông</span>';
+    $('bell-btn').className = `btn whitespace-nowrap ${on ? 'btn-ghost' : 'btn-accent animate-pulse'}`;
+  }
+
+  // SW nhận thông báo đẩy khi trang đang mở -> phát chuông trong trang & tải đơn ngay
+  if (PUSH_OK) navigator.serviceWorker.addEventListener('message', (e) => e.data?.type === 'new-order' && pollTick());
+
+  async function openBellModal() {
+    unlockAudio();
+    const on = !!(await pushSubscription().catch(() => null));
+    const { devices } = await call('/admin/push/key').catch(() => ({ devices: 0 }));
+    const iosHint =
+      IS_IOS && !STANDALONE
+        ? `<div class="rounded-xl bg-amber-50 text-amber-900 p-3 text-sm"><b>iPhone / iPad:</b> bấm nút <b>Chia sẻ</b> <span class="whitespace-nowrap">(ô vuông có mũi tên ↑)</span> → <b>Thêm vào MH chính</b>, sau đó mở <b>LaLiDa QL</b> từ màn hình chính, đăng nhập và bấm 🔔 lại. (Cần iOS 16.4 trở lên)</div>`
+        : '';
+    openModal(
+      'Chuông báo đơn mới',
+      `<div class="space-y-4 text-sm">
+        <div class="rounded-xl ${on ? 'bg-emerald-50 text-emerald-800' : 'bg-cream-100'} p-3">
+          Máy này: <b>${on ? '🔔 Đang nhận thông báo' : '🔕 Chưa bật thông báo'}</b><br />
+          <span class="text-xs text-stone-500">Số máy đang nhận thông báo: ${devices}</span>
+        </div>
+        ${iosHint}
+        <p>Khi bật, máy sẽ <b>kêu và rung</b> mỗi khi khách đặt đơn (quét QR tại bàn hoặc đặt online), <b>kể cả khi tắt màn hình hoặc đã đóng trang</b>.</p>
+        <div class="grid gap-2">
+          ${on ? '' : '<button id="push-on" class="btn btn-accent py-3">🔔 Bật thông báo trên máy này</button>'}
+          <button id="push-test" class="btn btn-ghost py-3">🔊 Thử chuông</button>
+          ${on ? '<button id="push-off" class="btn btn-danger">🔕 Tắt thông báo trên máy này</button>' : ''}
+        </div>
+        <ul class="text-xs text-stone-500 list-disc pl-5 space-y-1">
+          <li>Mở âm lượng điện thoại, tắt chế độ im lặng / Không làm phiền để nghe chuông.</li>
+          <li>Android: nếu không kêu khi tắt màn hình, vào Cài đặt → Pin → cho trình duyệt (Chrome) chạy nền không giới hạn.</li>
+          <li>Máy tính: để trình duyệt (Chrome/Edge) luôn chạy; thông báo hiện ở góc màn hình kèm âm thanh.</li>
+        </ul>
+      </div>`,
+      (root) => {
+        const act = (id, fn) =>
+          root.querySelector(id)?.addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            try {
+              await fn();
+            } catch (err) {
+              toast(err.message, 'error');
+            }
+            e.target.disabled = false;
+          });
+        act('#push-on', async () => {
+          await enablePush();
+          toast('Đã bật thông báo trên máy này 🔔');
+          renderBell();
+          openBellModal();
+        });
+        act('#push-off', async () => {
+          await disablePush();
+          toast('Đã tắt thông báo trên máy này');
+          renderBell();
+          openBellModal();
+        });
+        act('#push-test', async () => {
+          beep('online');
+          await call('/admin/push/test', { method: 'POST' });
+          toast((await pushSubscription()) ? 'Đã gửi thông báo thử tới các máy đã bật chuông' : 'Chuông trong trang đang hoạt động. Bật thông báo để kêu cả khi tắt màn hình.');
+        });
+      }
+    );
+  }
+  $('bell-btn').onclick = () => openBellModal().catch((e) => toast(e.message, 'error'));
 
   const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
   const chip = (status) => {
@@ -132,17 +279,23 @@
     pollTick();
     clearInterval(S.poll);
     S.poll = setInterval(pollTick, 4000);
+    syncPush();
   }
 
   // Cập nhật realtime (polling 4s): huy hiệu, chuông báo món mới, làm mới màn hình bếp
   async function pollTick() {
     try {
       S.summary = await call('/admin/summary');
-      if (S.lastItemId !== null && S.summary.last_item_id > S.lastItemId) {
-        beep();
-        toast('🔔 Có món mới được gọi!');
+      // Món mới do khách gọi (món nhân viên tự thêm trên máy này thì không kêu: S.quiet)
+      if (S.lastItemId !== null && S.summary.last_item_id > S.lastItemId && !S.quiet) {
+        const online = S.summary.last_online_item_id > S.lastOnlineItemId;
+        beep(online ? 'online' : 'table');
+        toast(online ? '🛵 Có đơn online mới!' : '🔔 Có món mới được gọi!');
+        flashTitle(online ? '🛵 ĐƠN ONLINE MỚI' : '🔔 CÓ MÓN MỚI');
       }
+      S.quiet = false;
       S.lastItemId = S.summary.last_item_id;
+      S.lastOnlineItemId = S.summary.last_online_item_id;
       renderNav();
       if (S.tab === 'orders') {
         if ($('count-table')) $('count-table').innerHTML = modeCount(S.summary.open_table_orders);
@@ -422,6 +575,7 @@
           toast('Đã thêm ly nước tặng vào hoá đơn 🎁');
           S.lastOrdersJson = '';
           loadOrders();
+          S.quiet = true;
           pollTick();
         })
     );
@@ -483,6 +637,7 @@
           toast(`Đã gửi ${orderLabel(order)} xuống bếp`);
           S.orderMode = 'open';
           if (S.tab === 'orders') renderOrdersView();
+          S.quiet = true;
           pollTick();
         });
       }
