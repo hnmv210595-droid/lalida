@@ -6,7 +6,7 @@ import { getSettings } from '../api/store.js';
 import { ARTICLES } from './articles.js';
 
 const SITE = 'https://lalida.net';
-const ASSET_V = '20261111a';
+const ASSET_V = '20261111b';
 const CACHE_TTL = 300;
 // Giá trị mẫu trong seed.sql - chưa nhập thật thì không hiện ra trang công khai
 const PLACEHOLDERS = ['Địa chỉ quán', '0900 000 000'];

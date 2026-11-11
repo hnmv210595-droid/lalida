@@ -738,6 +738,41 @@
   const tableUrl = (n) => `${baseUrl()}/order?table=${n}`;
   const onlineUrl = () => `${baseUrl()}/online`;
 
+  // Ảnh QR kèm dòng chữ phía trên (VD "Quét mã để đặt món - Bàn 1"): lưu ảnh về là in được ngay.
+  // Trả về { raw: QR trơn (dùng cho trang in), img: ảnh có chữ (hiện trên màn hình / tải về) }
+  function captionedQr(text, caption) {
+    const tmp = document.createElement('div');
+    new QRCode(tmp, { text, width: 360, height: 360, correctLevel: QRCode.CorrectLevel.M });
+    const qr = tmp.querySelector('canvas');
+    const W = 440;
+    const pad = 40;
+    const c = document.createElement('canvas');
+    const g = c.getContext('2d');
+    let size = 30;
+    const font = (s) => `bold ${s}px "Be Vietnam Pro", Arial, sans-serif`;
+    g.font = font(size);
+    while (g.measureText(caption).width > W - 30 && size > 14) g.font = font(--size);
+    const top = size + 46;
+    c.width = W;
+    c.height = top + qr.height + pad;
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = '#3b512a';
+    g.font = font(size);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(caption, W / 2, top / 2 + 6);
+    g.drawImage(qr, (W - qr.width) / 2, top);
+    return { raw: qr.toDataURL('image/png'), img: c.toDataURL('image/png') };
+  }
+  const slug = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+  function downloadImage(src, name) {
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = name;
+    a.click();
+  }
+
   async function renderTables() {
     const { tables } = await call('/admin/tables');
     view().innerHTML = `
@@ -755,7 +790,10 @@
           <div class="font-bold text-brand-800">🛵 Đặt online</div>
           <a href="${esc(onlineUrl())}" target="_blank" rel="noopener" class="text-sm text-brand-700 underline break-all">${esc(onlineUrl())}</a>
           <p class="text-xs text-stone-500 mt-1">Dán link lên Facebook / Zalo hoặc in mã QR này lên tờ rơi. Khách chọn món rồi điền Tên, SĐT, Địa chỉ để đặt.</p>
-          <button id="print-online-qr" class="btn btn-ghost mt-2">🖨️ In QR đặt online</button>
+          <div class="flex flex-wrap gap-2 mt-2">
+            <button id="print-online-qr" class="btn btn-ghost">🖨️ In QR đặt online</button>
+            <button id="save-online-qr" class="btn btn-ghost">💾 Lưu ảnh QR</button>
+          </div>
         </div>
       </div>
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -775,6 +813,7 @@
             <div class="text-xs text-stone-500 mt-1">${t.seats} ghế</div>
             <div class="flex gap-2 mt-3">
               <button data-print-qr="${t.number}" class="btn btn-ghost flex-1">🖨️ In QR</button>
+              <button data-save-qr="${t.number}" class="btn btn-ghost flex-1">💾 Lưu ảnh</button>
               <button data-del-table="${t.id}" data-label="${esc(t.name || 'Bàn ' + t.number)}" class="btn btn-danger">Xoá</button>
             </div>
           </div>`
@@ -782,18 +821,30 @@
           .join('')}
       </div>`;
 
+    // Ảnh hiện trên màn hình đã có sẵn chữ: nhấn giữ (điện thoại) / chuột phải (máy tính) → Lưu ảnh
+    const qrs = {};
+    const tableLabel = (t) => t.name || 'Bàn ' + t.number;
     view().querySelectorAll('[data-qr]').forEach((el) => {
-      if (window.QRCode) new QRCode(el, { text: tableUrl(el.dataset.qr), width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
-      else el.textContent = 'Không tải được thư viện QR';
+      if (!window.QRCode) return (el.textContent = 'Không tải được thư viện QR');
+      const t = tables.find((x) => x.number === Number(el.dataset.qr));
+      const q = (qrs[t.number] = captionedQr(tableUrl(t.number), `Quét mã để đặt món - ${tableLabel(t)}`));
+      el.innerHTML = `<img src="${q.img}" alt="Mã QR ${esc(tableLabel(t))}" class="w-[200px] h-auto rounded border border-cream-200" />`;
     });
-    if (window.QRCode) new QRCode($('online-qr'), { text: onlineUrl(), width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+    const onlineQ = window.QRCode ? captionedQr(onlineUrl(), 'Quét mã để đặt món online') : null;
+    if (onlineQ) $('online-qr').innerHTML = `<img src="${onlineQ.img}" alt="Mã QR đặt online" class="w-[150px] h-auto rounded border border-cream-200" />`;
+    $('save-online-qr').onclick = () => onlineQ && downloadImage(onlineQ.img, 'qr-dat-mon-online.png');
+    view().querySelectorAll('[data-save-qr]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const t = tables.find((x) => x.number === Number(b.dataset.saveQr));
+        if (qrs[t.number]) downloadImage(qrs[t.number].img, `qr-${slug(tableLabel(t))}.png`);
+      })
+    );
     $('print-online-qr').onclick = () => {
-      const canvas = $('online-qr').querySelector('canvas');
       P.printHtml(
         `<div class="qr-sheet" style="grid-template-columns:1fr;max-width:110mm;margin:auto"><div class="qr-card">
           <img class="logo" src="/assets/logo.webp" alt="LaLiDa" />
           <div style="font-size:16pt;font-weight:700;color:#3b512a">🛵 Đặt món online</div>
-          <div class="qr"><img src="${canvas ? canvas.toDataURL('image/png') : ''}" style="width:55mm;height:55mm" alt="QR" /></div>
+          <div class="qr"><img src="${onlineQ ? onlineQ.raw : ''}" style="width:55mm;height:55mm" alt="QR" /></div>
           <div style="font-size:12pt;font-weight:600">Quét mã để đặt món - giao tận nơi</div>
           <div style="font-size:9pt;color:#666;margin-top:2mm">${esc(onlineUrl())}</div>
         </div></div>`,
@@ -808,8 +859,7 @@
     });
 
     const qrCard = (t) => {
-      const canvas = view().querySelector(`[data-qr="${t.number}"] canvas`);
-      const src = canvas ? canvas.toDataURL('image/png') : '';
+      const src = qrs[t.number]?.raw || '';
       return `<div class="qr-card">
         <img class="logo" src="/assets/logo.webp" alt="LaLiDa" />
         <div style="font-size:16pt;font-weight:700;color:#3b512a">${esc(t.name || 'Bàn ' + t.number)}</div>
