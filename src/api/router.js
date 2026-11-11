@@ -349,6 +349,15 @@ route('GET', '/admin/summary', 'admin', async ({ env }) => {
        (SELECT COALESCE(MAX(id), 0) FROM order_items) AS last_item_id,
        (SELECT COALESCE(MAX(i.id), 0) FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.order_type = 'online') AS last_online_item_id`
   ).first();
+  // Sắp qua ngày mà còn nhân viên chưa bấm "Ra ca" -> trang quản trị nhắc
+  row.shift_warning = [];
+  if (vnTime() >= SHIFT_WARN_FROM) {
+    const { results } = await env.DB.prepare(
+      `SELECT DISTINCT s.full_name FROM attendance a JOIN staff s ON s.id = a.staff_id
+         WHERE a.check_out IS NULL AND a.check_in IS NOT NULL ORDER BY s.full_name`
+    ).all();
+    row.shift_warning = results.map((r) => r.full_name);
+  }
   // Nhắc trả lương: từ ngày trả lương (mặc định ngày 5), đếm nhân viên chưa được trả lương tháng trước
   const today = vnToday();
   const payday = Number((await getSettings(env)).payday) || 5;
@@ -692,6 +701,20 @@ route('DELETE', '/admin/staff/:id', 'admin', async ({ env, params }) => {
   return { ok: true };
 });
 
+// Quên bấm "Ra ca": sang ngày mới thì ca của ngày trước tự kết thúc lúc 23:59, không tính sang hôm sau
+// và hôm sau vẫn "Vào ca" bình thường.
+const SHIFT_END = '23:59';
+const SHIFT_WARN_FROM = '23:00'; // từ giờ này trang quản trị nhắc nhân viên chưa ra ca
+const AUTO_OUT_NOTE = 'Tự ra ca 23:59 (quên bấm Ra ca)';
+function closeStaleShifts(env) {
+  return env.DB.prepare(
+    `UPDATE attendance SET check_out = ?, note = CASE WHEN note IS NULL OR note = '' THEN ? ELSE substr(note || ' · ' || ?, 1, 200) END
+       WHERE check_out IS NULL AND check_in IS NOT NULL AND work_date < ?`
+  )
+    .bind(SHIFT_END, AUTO_OUT_NOTE, AUTO_OUT_NOTE, vnToday())
+    .run();
+}
+
 // Số giờ làm (xử lý ca qua đêm)
 function hoursBetween(a, b) {
   if (!a || !b) return 0;
@@ -702,6 +725,7 @@ function hoursBetween(a, b) {
 }
 
 route('GET', '/admin/attendance', 'admin', async ({ env, url }) => {
+  await closeStaleShifts(env);
   const date = dateStr(url.searchParams.get('date') || vnToday());
   const { results } = await env.DB.prepare(
     `SELECT a.*, s.full_name, s.position, s.hourly_rate FROM attendance a JOIN staff s ON s.id = a.staff_id
@@ -716,6 +740,7 @@ route('GET', '/admin/attendance', 'admin', async ({ env, url }) => {
 route('GET', '/admin/attendance/summary', 'admin', async ({ env, url }) => {
   const month = url.searchParams.get('month') || vnToday().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(month)) throw new HttpError(400, 'Tháng không hợp lệ');
+  await closeStaleShifts(env);
   const { results } = await env.DB.prepare(
     `SELECT a.staff_id, a.work_date, a.check_in, a.check_out, s.full_name, s.hourly_rate, s.monthly_salary
        FROM attendance a JOIN staff s ON s.id = a.staff_id WHERE substr(a.work_date, 1, 7) = ?`
@@ -758,6 +783,7 @@ async function payrollContext(env, month) {
 
 // Ngày công (số ngày có chấm công vào) và tổng giờ của từng nhân viên trong tháng
 async function attendanceStats(env, month) {
+  await closeStaleShifts(env);
   const { results } = await env.DB.prepare(
     'SELECT staff_id, work_date, check_in, check_out FROM attendance WHERE substr(work_date, 1, 7) = ? AND check_in IS NOT NULL'
   )
@@ -892,6 +918,7 @@ route('POST', '/finance/payroll/:id/revert', 'finance', async ({ env, params }) 
 
 route('POST', '/admin/attendance/check-in', 'admin', async ({ env, body }) => {
   const staffId = int(body.staff_id, { min: 1, name: 'Nhân viên' });
+  await closeStaleShifts(env);
   const open = await env.DB.prepare('SELECT 1 FROM attendance WHERE staff_id = ? AND check_out IS NULL AND check_in IS NOT NULL')
     .bind(staffId)
     .first();
@@ -902,13 +929,18 @@ route('POST', '/admin/attendance/check-in', 'admin', async ({ env, body }) => {
 
 route('POST', '/admin/attendance/check-out', 'admin', async ({ env, body }) => {
   const staffId = int(body.staff_id, { min: 1, name: 'Nhân viên' });
-  const res = await env.DB.prepare(
-    `UPDATE attendance SET check_out = ? WHERE id = (
-       SELECT id FROM attendance WHERE staff_id = ? AND check_out IS NULL AND check_in IS NOT NULL ORDER BY id DESC LIMIT 1)`
+  const open = await env.DB.prepare(
+    'SELECT id, work_date FROM attendance WHERE staff_id = ? AND check_out IS NULL AND check_in IS NOT NULL ORDER BY id DESC LIMIT 1'
   )
-    .bind(vnTime(), staffId)
-    .run();
-  if (!res.meta.changes) throw new HttpError(409, 'Nhân viên chưa chấm giờ vào');
+    .bind(staffId)
+    .first();
+  if (!open) throw new HttpError(409, 'Nhân viên chưa chấm giờ vào');
+  // Bấm "Ra ca" sau nửa đêm cho ca hôm trước -> chốt lúc 23:59 của ngày đó
+  if (open.work_date < vnToday()) {
+    await closeStaleShifts(env);
+    return { ok: true, auto: true, check_out: SHIFT_END };
+  }
+  await env.DB.prepare('UPDATE attendance SET check_out = ? WHERE id = ?').bind(vnTime(), open.id).run();
   return { ok: true };
 });
 

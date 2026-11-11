@@ -360,6 +360,7 @@
       S.lastItemId = S.summary.last_item_id;
       S.lastOnlineItemId = S.summary.last_online_item_id;
       renderNav();
+      renderShiftWarn();
       if (S.tab === 'orders') {
         if ($('count-table')) $('count-table').innerHTML = modeCount(S.summary.open_table_orders);
         if ($('count-online')) $('count-online').innerHTML = modeCount(S.summary.open_online_orders);
@@ -367,6 +368,31 @@
       }
     } catch {
       /* lần sau thử lại */
+    }
+  }
+
+  // Từ 23:00 còn nhân viên chưa bấm "Ra ca": hiện thanh nhắc + đọc/kêu nhắc mỗi 15 phút.
+  // Quá 0:00 hệ thống tự ra ca lúc 23:59 cho ngày đó, hôm sau vào ca bình thường.
+  const SHIFT_REMIND_MS = 15 * 60 * 1000;
+  function renderShiftWarn() {
+    const names = S.summary.shift_warning || [];
+    const box = $('shift-warn');
+    if (!names.length) {
+      box.className = 'hidden';
+      S.shiftWarnAt = 0;
+      return;
+    }
+    box.className = 'bg-red-600 text-white';
+    box.innerHTML = `<div class="max-w-7xl mx-auto px-4 py-2 flex flex-wrap items-center gap-2 text-sm">
+      <span class="flex-1 min-w-[200px]">⏰ <b>Sắp qua ngày:</b> ${names.map(esc).join(', ')} chưa bấm <b>Ra ca</b>. Nếu quên, đến 0:00 hệ thống tự ra ca lúc 23:59.</span>
+      <button id="shift-warn-go" class="btn bg-white text-red-700 !py-1">Ra ca ngay</button>
+    </div>`;
+    $('shift-warn-go').onclick = () => go('staff');
+    if (Date.now() - (S.shiftWarnAt || 0) >= SHIFT_REMIND_MS) {
+      S.shiftWarnAt = Date.now();
+      if (!(alertMode() === 'voice' && speak('Còn nhân viên chưa ra ca'))) beep('table', 2);
+      toast(`⏰ ${names.join(', ')} chưa bấm Ra ca`, 'error');
+      flashTitle('⏰ CHƯA RA CA');
     }
   }
 
@@ -1400,7 +1426,15 @@
       (b) => (b.onclick = () => confirm('Xoá nhân viên này và toàn bộ dữ liệu chấm công?') && act(() => call(`/admin/staff/${b.dataset.delStaff}`, { method: 'DELETE' })))
     );
     view().querySelectorAll('[data-checkin]').forEach((b) => (b.onclick = () => act(() => call('/admin/attendance/check-in', { method: 'POST', body: { staff_id: Number(b.dataset.checkin) } }))));
-    view().querySelectorAll('[data-checkout]').forEach((b) => (b.onclick = () => act(() => call('/admin/attendance/check-out', { method: 'POST', body: { staff_id: Number(b.dataset.checkout) } }))));
+    view().querySelectorAll('[data-checkout]').forEach(
+      (b) =>
+        (b.onclick = () =>
+          act(async () => {
+            const r = await call('/admin/attendance/check-out', { method: 'POST', body: { staff_id: Number(b.dataset.checkout) } });
+            if (r.auto) toast('Ca hôm trước đã được chốt ra lúc 23:59');
+            pollTick();
+          }))
+    );
     view().querySelectorAll('[data-edit-att]').forEach((b) => (b.onclick = () => editAtt(att.records.find((r) => r.id === Number(b.dataset.editAtt)))));
     view().querySelectorAll('[data-del-att]').forEach(
       (b) => (b.onclick = () => confirm('Xoá bản ghi chấm công này?') && act(() => call(`/admin/attendance/${b.dataset.delAtt}`, { method: 'DELETE' })))
